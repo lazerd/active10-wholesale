@@ -39,7 +39,7 @@ const ORDERS = [
   { id: "ORD-1028", customer: "Dr. Dale Giessman", date: "2026-02-22", total: 695.00, status: "delivered", items: 16 },
 ];
 
-function getTier(s) {
+function getTier(s: number) {
   if (s >= 1000) return { name: "ELITE", disc: 0.20, color: "#E8C76A", next: null, at: null };
   if (s >= 300) return { name: "PRO+", disc: 0.15, color: BL, next: "ELITE", at: 1000 };
   if (s >= 150) return { name: "PRO", disc: 0.10, color: GR, next: "PRO+", at: 300 };
