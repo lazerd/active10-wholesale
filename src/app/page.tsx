@@ -45,29 +45,29 @@ function getTier(s: number) {
   if (s >= 150) return { name: "PRO", disc: 0.10, color: GR, next: "PRO+", at: 300 };
   return { name: "STARTER", disc: 0, color: "#8899AA", next: "PRO", at: 150 };
 }
-const ws = r => r * 0.5;
-const fp = (r, d) => ws(r) * (1 - d);
+const ws = (r: number) => r * 0.5;
+const fp = (r: number, d: number) => ws(r) * (1 - d);
 
-const Img = ({ src, alt, color, style }) => {
+const Img = ({ src, alt, color, style }: { src: string; alt: string; color: string; style?: React.CSSProperties }) => {
   const [err, setErr] = useState(false);
   if (err) return <div style={{ ...style, background: color || "#f0ece8", display: "flex", alignItems: "center", justifyContent: "center", color: B, fontWeight: 700, fontSize: 13, textAlign: "center", padding: 8 }}>{alt}</div>;
   return <img src={src} alt={alt} style={style} onError={() => setErr(true)} />;
 };
 
 export default function App() {
-  const [cart, setCart] = useState({});
+  const [cart, setCart] = useState<Record<string, number>>({});
   const [view, setView] = useState("shop");
   const [filter, setFilter] = useState("all");
-  const [userType, setUserType] = useState(null);
+  const [userType, setUserType] = useState<string | null>(null);
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
   const [loginError, setLoginError] = useState("");
   const [authView, setAuthView] = useState("login");
   const [orderNote, setOrderNote] = useState("");
   const [orderSuccess, setOrderSuccess] = useState(false);
-  const [anim, setAnim] = useState(null);
+  const [anim, setAnim] = useState<string | null>(null);
   const [adminTab, setAdminTab] = useState("customers");
   const [applicants, setApplicants] = useState(APPLICANTS);
-  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<typeof CUSTOMERS[number] | null>(null);
   const [appSubmitted, setAppSubmitted] = useState(false);
   const [showPw, setShowPw] = useState(false);
   const [payMethod, setPayMethod] = useState("check");
@@ -79,8 +79,8 @@ export default function App() {
   const count = items.reduce((s, [, q]) => s + q, 0);
   const save = items.reduce((s, [id, q]) => { const p = PRODUCTS.find(p => p.id === id); return s + (p ? (p.retail - fp(p.retail, tier.disc)) * q : 0); }, 0);
 
-  const add = (id, d) => { setAnim(id); setTimeout(() => setAnim(null), 300); setCart(p => ({ ...p, [id]: Math.max(0, (p[id] || 0) + d) })); };
-  const setQty = (id, q) => setCart(p => ({ ...p, [id]: Math.max(0, q) }));
+  const add = (id: string, d: number) => { setAnim(id); setTimeout(() => setAnim(null), 300); setCart(p => ({ ...p, [id]: Math.max(0, (p[id] || 0) + d) })); };
+  const setQty = (id: string, q: number) => setCart(p => ({ ...p, [id]: Math.max(0, q) }));
 
   const login = () => {
     setLoginError("");
@@ -91,14 +91,14 @@ export default function App() {
     else setLoginError("Please enter your credentials.");
   };
   const logout = () => { setUserType(null); setLoginForm({ email: "", password: "" }); setView("shop"); setCart({}); setSelectedCustomer(null); };
-  const approve = id => setApplicants(p => p.map(a => a.id === id ? { ...a, status: "approved" } : a));
-  const reject = id => setApplicants(p => p.map(a => a.id === id ? { ...a, status: "rejected" } : a));
+  const approve = (id: number) => setApplicants(p => p.map(a => a.id === id ? { ...a, status: "approved" } : a));
+  const reject = (id: number) => setApplicants(p => p.map(a => a.id === id ? { ...a, status: "rejected" } : a));
 
   const filtered = filter === "all" ? PRODUCTS : PRODUCTS.filter(p => p.cat === filter);
-  const bg = { minHeight: "100vh", background: `linear-gradient(165deg, ${BDP} 0%, ${BBG} 40%, ${BD} 100%)`, fontFamily: "'DM Sans', sans-serif", color: "white" };
+  const bg: React.CSSProperties = { minHeight: "100vh", background: `linear-gradient(165deg, ${BDP} 0%, ${BBG} 40%, ${BD} 100%)`, fontFamily: "'DM Sans', sans-serif", color: "white" };
   const fonts = <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,500;9..40,700&family=Playfair+Display:wght@600;800&display=swap" rel="stylesheet" />;
   const css = <style>{`@keyframes su{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}@keyframes pu{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}.ch:hover{transform:translateY(-3px);box-shadow:0 16px 48px rgba(0,0,0,.35)}.ch{transition:all .25s ease}.bh:hover{filter:brightness(1.12)}.bh:active{transform:scale(.97)}input::-webkit-outer-spin-button,input::-webkit-inner-spin-button{-webkit-appearance:none}`}</style>;
-  const inp = { width: "100%", padding: "12px 16px", background: "rgba(255,255,255,.06)", border: `1px solid ${B}33`, borderRadius: 10, color: "white", fontSize: 15, outline: "none", boxSizing: "border-box" };
+  const inp: React.CSSProperties = { width: "100%", padding: "12px 16px", background: "rgba(255,255,255,.06)", border: `1px solid ${B}33`, borderRadius: 10, color: "white", fontSize: 15, outline: "none", boxSizing: "border-box" };
 
   if (orderSuccess) return (
     <div style={{ ...bg, display: "flex", alignItems: "center", justifyContent: "center" }}>{fonts}{css}
@@ -148,8 +148,8 @@ export default function App() {
             <h2 style={{ fontFamily: "'Playfair Display',serif", fontSize: 24, marginBottom: 8 }}>Welcome Back</h2>
             <p style={{ color: "rgba(255,255,255,.5)", fontSize: 14, marginBottom: 28 }}>Sign in to your wholesale account</p>
             {loginError && <div style={{ background: "rgba(255,80,80,.1)", border: "1px solid rgba(255,80,80,.3)", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#FF6B6B" }}>{loginError}</div>}
-            <div style={{ marginBottom: 16 }}><label style={{ display: "block", color: "rgba(255,255,255,.5)", fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: ".8px" }}>Email</label><input value={loginForm.email} onChange={e => setLoginForm(p => ({ ...p, email: e.target.value }))} onKeyDown={e => e.key === "Enter" && login()} style={inp} placeholder="your@email.com" /></div>
-            <div style={{ marginBottom: 24 }}><label style={{ display: "block", color: "rgba(255,255,255,.5)", fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: ".8px" }}>Password</label><div style={{ position: "relative" }}><input type={showPw ? "text" : "password"} value={loginForm.password} onChange={e => setLoginForm(p => ({ ...p, password: e.target.value }))} onKeyDown={e => e.key === "Enter" && login()} style={{ ...inp, paddingRight: 44 }} placeholder="••••••••" /><button onClick={() => setShowPw(p => !p)} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", padding: 6, color: showPw ? BL : "rgba(255,255,255,.35)", fontSize: 14 }}>{showPw ? "🙈" : "👁"}</button></div></div>
+            <div style={{ marginBottom: 16 }}><label style={{ display: "block", color: "rgba(255,255,255,.5)", fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: ".8px" }}>Email</label><input value={loginForm.email} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLoginForm(p => ({ ...p, email: e.target.value }))} onKeyDown={(e: React.KeyboardEvent) => e.key === "Enter" && login()} style={inp} placeholder="your@email.com" /></div>
+            <div style={{ marginBottom: 24 }}><label style={{ display: "block", color: "rgba(255,255,255,.5)", fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: ".8px" }}>Password</label><div style={{ position: "relative" }}><input type={showPw ? "text" : "password"} value={loginForm.password} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLoginForm(p => ({ ...p, password: e.target.value }))} onKeyDown={(e: React.KeyboardEvent) => e.key === "Enter" && login()} style={{ ...inp, paddingRight: 44 }} placeholder="••••••••" /><button onClick={() => setShowPw(p => !p)} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", padding: 6, color: showPw ? BL : "rgba(255,255,255,.35)", fontSize: 14 }}>{showPw ? "🙈" : "👁"}</button></div></div>
             <button onClick={login} className="bh" style={{ width: "100%", padding: 14, background: `linear-gradient(135deg,${B},${BL})`, border: "none", borderRadius: 10, color: "white", fontWeight: 700, fontSize: 15, cursor: "pointer", marginBottom: 12 }}>Sign In</button>
             <button onClick={() => setAuthView("apply")} style={{ width: "100%", padding: 12, background: "none", border: `1px solid ${B}33`, borderRadius: 10, color: "rgba(255,255,255,.6)", fontSize: 14, cursor: "pointer" }}>New? Apply for wholesale access</button>
           </div>
@@ -195,7 +195,7 @@ export default function App() {
           {adminTab === "customers" && !selectedCustomer && (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {CUSTOMERS.map((c, i) => (
-                <div key={c.id} onClick={() => setSelectedCustomer(c)} style={{ background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 14, padding: "18px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", transition: "all .2s", animation: `su .4s ease ${i * .05}s both` }} onMouseOver={e => e.currentTarget.style.borderColor = `${B}55`} onMouseOut={e => e.currentTarget.style.borderColor = `${B}22`}>
+                <div key={c.id} onClick={() => setSelectedCustomer(c)} style={{ background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 14, padding: "18px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", transition: "all .2s", animation: `su .4s ease ${i * .05}s both` }} onMouseOver={(e: React.MouseEvent<HTMLDivElement>) => (e.currentTarget.style.borderColor = `${B}55`)} onMouseOut={(e: React.MouseEvent<HTMLDivElement>) => (e.currentTarget.style.borderColor = `${B}22`)}>
                   <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
                     <div style={{ width: 44, height: 44, borderRadius: 12, background: `${B}22`, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 16, color: BL }}>{c.name.split(" ").map(n => n[0]).join("").slice(0, 2)}</div>
                     <div>
@@ -303,7 +303,7 @@ export default function App() {
                 <div style={{ padding: "6px 14px", borderRadius: 8, background: `${tier.color}22`, color: tier.color, fontWeight: 700, fontSize: 12, letterSpacing: "1px" }}>{tier.name}</div>
                 <div><div style={{ fontSize: 14, fontWeight: 500 }}>{tier.disc > 0 ? `${(50 + tier.disc * 50).toFixed(0)}% off retail` : "50% off retail"}</div><div style={{ fontSize: 12, color: "rgba(255,255,255,.4)" }}>Subtotal: ${wsSub.toFixed(2)}</div></div>
               </div>
-              {tier.next && <div style={{ fontSize: 13, color: BL, fontWeight: 500 }}>${(tier.at - wsSub).toFixed(2)} more for {tier.next} →</div>}
+              {tier.next && <div style={{ fontSize: 13, color: BL, fontWeight: 500 }}>${((tier.at || 0) - wsSub).toFixed(2)} more for {tier.next} →</div>}
             </div>
             <div style={{ marginTop: 12, display: "flex", gap: 4 }}>
               {[{ n: "STARTER", a: 0, c: "#8899AA" }, { n: "PRO", a: 150, c: GR }, { n: "PRO+", a: 300, c: BL }, { n: "ELITE", a: 1000, c: "#E8C76A" }].map((t, i) => (
@@ -343,7 +343,7 @@ export default function App() {
                     ) : (
                       <div style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(255,255,255,.04)", borderRadius: 10, padding: 3 }}>
                         <button onClick={() => add(p.id, -1)} className="bh" style={{ width: 36, height: 36, borderRadius: 8, border: "none", background: "rgba(255,255,255,.08)", color: "white", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
-                        <input type="number" value={q} onChange={e => setQty(p.id, parseInt(e.target.value) || 0)} style={{ flex: 1, textAlign: "center", background: "none", border: "none", color: "white", fontSize: 16, fontWeight: 700, outline: "none", width: 36 }} />
+                        <input type="number" value={q} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQty(p.id, parseInt(e.target.value) || 0)} style={{ flex: 1, textAlign: "center", background: "none", border: "none", color: "white", fontSize: 16, fontWeight: 700, outline: "none", width: 36 }} />
                         <button onClick={() => add(p.id, 1)} className="bh" style={{ width: 36, height: 36, borderRadius: 8, border: "none", background: `${B}33`, color: BL, fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", animation: anim === p.id ? "pu .3s ease" : "none" }}>+</button>
                       </div>
                     )}
@@ -379,7 +379,7 @@ export default function App() {
                   </div>
                 ); })}
               </div>
-              <div style={{ marginBottom: 20 }}><label style={{ display: "block", fontSize: 11, color: "rgba(255,255,255,.4)", marginBottom: 6, textTransform: "uppercase", letterSpacing: ".8px" }}>Order Notes</label><textarea value={orderNote} onChange={e => setOrderNote(e.target.value)} placeholder="Special instructions..." rows={2} style={{ ...inp, resize: "vertical", fontFamily: "inherit" }} /></div>
+              <div style={{ marginBottom: 20 }}><label style={{ display: "block", fontSize: 11, color: "rgba(255,255,255,.4)", marginBottom: 6, textTransform: "uppercase", letterSpacing: ".8px" }}>Order Notes</label><textarea value={orderNote} onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setOrderNote(e.target.value)} placeholder="Special instructions..." rows={2} style={{ ...inp, resize: "vertical", fontFamily: "inherit" }} /></div>
               
               {/* Payment Method */}
               <div style={{ background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 16, padding: 22, marginBottom: 16 }}>
