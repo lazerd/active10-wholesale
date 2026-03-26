@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
 
 const NOTIFY_EMAILS = [
+  "darrinjco@gmail.com",
   "junemunroe@aol.com",
   "junemunroe@active10.net",
   "activeformulationorders@gmail.com",
