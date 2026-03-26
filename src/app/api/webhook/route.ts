@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const RESEND_API_KEY = process.env.RESEND_API_KEY!;
-const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || "";
+const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
 
 const NOTIFY_EMAILS = [
   "junemunroe@aol.com",
@@ -27,20 +26,10 @@ async function sendEmail(to: string, subject: string, html: string) {
 
 export async function POST(req: NextRequest) {
   try {
-    // Optional: verify webhook secret
-    const authHeader = req.headers.get("authorization");
-    if (WEBHOOK_SECRET && authHeader !== `Bearer ${WEBHOOK_SECRET}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const body = await req.json();
+    const { type, record } = body;
 
-    const payload = await req.json();
-    const { type, record, table } = payload;
-
-    if (type !== "INSERT") {
-      return NextResponse.json({ ok: true, skipped: true });
-    }
-
-    if (table === "applications") {
+    if (type === "application") {
       const html = `
         <div style="font-family:sans-serif;max-width:600px">
           <h2 style="color:#0072BC">New Wholesale Application</h2>
@@ -57,27 +46,26 @@ export async function POST(req: NextRequest) {
           </p>
         </div>
       `;
-
-      const subject = `New Wholesale Application: ${record.name} — ${record.business || ""}`;
-
+      const subject = "New Wholesale Application: " + record.name + " — " + (record.business || "");
+      const results = [];
       for (const email of NOTIFY_EMAILS) {
-        await sendEmail(email, subject, html);
+        const res = await sendEmail(email, subject, html);
+        results.push({ email, status: res.status });
       }
+      return NextResponse.json({ ok: true, type: "application", results });
     }
 
-    if (table === "orders") {
+    if (type === "order") {
       const items = record.items || [];
       const itemRows = items
-        .map(
-          (item: any) => `
-        <tr>
-          <td style="padding:8px;border-bottom:1px solid #eee">${item.name}</td>
-          <td style="padding:8px;border-bottom:1px solid #eee;text-align:center">${item.qty}</td>
-          <td style="padding:8px;border-bottom:1px solid #eee;text-align:right">$${Number(item.unit_price).toFixed(2)}</td>
-          <td style="padding:8px;border-bottom:1px solid #eee;text-align:right">$${Number(item.line_total).toFixed(2)}</td>
-        </tr>
-      `
-        )
+        .map((item: any) => `
+          <tr>
+            <td style="padding:8px;border-bottom:1px solid #eee">${item.name}</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;text-align:center">${item.qty}</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;text-align:right">$${Number(item.unit_price).toFixed(2)}</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;text-align:right">$${Number(item.line_total).toFixed(2)}</td>
+          </tr>
+        `)
         .join("");
 
       const html = `
@@ -111,15 +99,16 @@ export async function POST(req: NextRequest) {
           </p>
         </div>
       `;
-
-      const subject = `New Order ${record.order_number}: $${Number(record.total).toFixed(2)} from ${record.customer_name}`;
-
+      const subject = "New Order " + record.order_number + ": $" + Number(record.total).toFixed(2) + " from " + record.customer_name;
+      const results = [];
       for (const email of NOTIFY_EMAILS) {
-        await sendEmail(email, subject, html);
+        const res = await sendEmail(email, subject, html);
+        results.push({ email, status: res.status });
       }
+      return NextResponse.json({ ok: true, type: "order", results });
     }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ error: "Unknown type" }, { status: 400 });
   } catch (err: any) {
     console.error("Webhook error:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
