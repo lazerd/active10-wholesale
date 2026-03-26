@@ -138,15 +138,24 @@ export default function App() {
 
   // Submit application
   const submitApplication = async () => {
-    const { error } = await supabase.from("applications").insert({
+    const { data, error } = await supabase.from("applications").insert({
       name: appForm.name,
       email: appForm.email,
       phone: appForm.phone,
       business: appForm.business,
       city: appForm.city,
       type: appForm.type,
-    });
-    if (!error) setAppSubmitted(true);
+    }).select().single();
+    if (!error) {
+      setAppSubmitted(true);
+      // Send notification email
+      fetch("/api/webhook", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "application", record: data }),
+      }).catch(() => {});
+    }
+  };
   };
 
   // Submit order
@@ -158,6 +167,40 @@ export default function App() {
       const p = products.find(p => p.id === id)!;
       const unitPrice = fp(p.retail, tier.disc);
       return { product_id: id, name: p.name, qty: q, unit_price: unitPrice, line_total: unitPrice * q };
+    });
+
+    const ccFee = payMethod === "card" ? total * 0.0299 : 0;
+    const finalTotal = total + ccFee;
+
+    const { data, error } = await supabase.from("orders").insert({
+      order_number: "",
+      customer_id: customer.id,
+      customer_name: customer.name,
+      customer_email: customer.email,
+      items: orderItems,
+      subtotal: wsSub,
+      tier_name: tier.name,
+      tier_discount: tier.disc,
+      discount_amount: wsSub - total,
+      cc_fee: ccFee,
+      total: finalTotal,
+      pay_method: payMethod,
+      notes: orderNote || null,
+    }).select().single();
+
+    setOrderSubmitting(false);
+    if (!error && data) {
+      setOrderSuccess(true);
+      // Send notification email
+      fetch("/api/webhook", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "order", record: data }),
+      }).catch(() => {});
+    } else {
+      alert("Failed to submit order. Please try again.");
+    }
+  };
     });
 
     const ccFee = payMethod === "card" ? total * 0.0299 : 0;
