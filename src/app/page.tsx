@@ -1,43 +1,15 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { supabase } from "@/lib/supabase";
 
 const B = "#0072BC", BL = "#0088DD", BD = "#005A96", BBG = "#003A5C", BDP = "#00253D", GR = "#00B894";
 
-const PRODUCTS = [
-  { id: "plus-tube-3oz", name: "Active 10 PLUS", subtitle: "Full Spectrum Hemp Oil · 3oz Tube", retail: 39.95, img: "https://www.getactive10.com/cdn/shop/products/CBDTubeNEW_370x373.png?v=1664841562", badge: "CBD", cat: "plus", color: "#e8f4ec" },
-  { id: "plus-rollon", name: "Active 10 PLUS Roll-On", subtitle: "Full Spectrum Hemp Oil · 3oz", retail: 39.95, img: "https://www.getactive10.com/cdn/shop/products/attempt2_600x600.jpg?v=1664841520", badge: "CBD", cat: "plus", color: "#e8f0f4" },
-  { id: "plus-pump-8oz", name: "Active 10 PLUS Pump", subtitle: "Full Spectrum Hemp Oil · 8oz", retail: 69.95, img: "https://www.getactive10.com/cdn/shop/products/CBDPUMP1_600x601.jpg?v=1664841567", badge: "CBD", cat: "plus", color: "#e8ecf4" },
-  { id: "original-tube-4oz", name: "Active 10 Original Tube", subtitle: "Pain Relief & Healing · 4oz", retail: 29.95, img: "https://www.getactive10.com/cdn/shop/products/newtube_600x601.jpg?v=1664841570", badge: null, cat: "original", color: "#f4f0e8" },
-  { id: "original-pump-8oz", name: "Active 10 Original Pump", subtitle: "Pain Relief & Healing · 8oz", retail: 35.95, img: "https://www.getactive10.com/cdn/shop/products/2BF8A-1_600x600.jpg?v=1664841557", badge: null, cat: "original", color: "#f4ece8" },
-  { id: "original-jar-2oz", name: "Active 10 Original Jar", subtitle: "Pain Relief & Healing · 2oz", retail: 21.95, img: "https://www.getactive10.com/cdn/shop/products/newjar_600x598.jpg?v=1664841564", badge: null, cat: "original", color: "#f0ece8" },
-  { id: "original-rollon-3oz", name: "Active 10 Original Roll-On", subtitle: "Pain Relief & Healing · 3oz", retail: 24.95, img: "https://www.getactive10.com/cdn/shop/products/temp_2_600x798.png?v=1664841573", badge: null, cat: "original", color: "#f4f0ec" },
-  { id: "sleep-drops", name: "Night Time Sleep Aid", subtitle: "Anti-Inflammation Water Drops", retail: 29.95, img: "https://www.getactive10.com/cdn/shop/files/IMG_0181_600x800.png?v=1698104945", badge: "NEW", cat: "wellness", color: "#e8e8f4" },
-  { id: "cbd-capsules", name: "CBD Turmeric & Boswellia", subtitle: "Triple-Action Relief · 30 Caps", retail: 39.95, img: "https://www.getactive10.com/cdn/shop/files/ChatGPTImageNov5_2025_03_38_05PM_600x901.png?v=1762385925", badge: "NEW", cat: "wellness", color: "#ece8f4" },
-];
-
-const CUSTOMERS = [
-  { id: 1, name: "Dr. Dale Giessman", email: "dale@giessmandc.com", business: "Giessman Chiropractic", city: "Brentwood, CA", type: "Chiropractor", status: "active", joined: "2024-06-15", totalOrders: 24, totalSpent: 8450.00, lastOrder: "2026-03-18" },
-  { id: 2, name: "Dr. Lisa Chen", email: "lisa@chenwellness.com", business: "Chen Wellness Center", city: "Walnut Creek, CA", type: "Chiropractor", status: "active", joined: "2024-09-22", totalOrders: 18, totalSpent: 6230.00, lastOrder: "2026-03-12" },
-  { id: 3, name: "Dr. Mike Torres", email: "mike@torrespt.com", business: "Torres Physical Therapy", city: "Pleasanton, CA", type: "Physical Therapy", status: "active", joined: "2025-01-10", totalOrders: 12, totalSpent: 3890.50, lastOrder: "2026-02-28" },
-  { id: 4, name: "Dr. Amy Patel", email: "amy@patelmassage.com", business: "Patel Therapeutic Massage", city: "Lafayette, CA", type: "Massage Therapy", status: "active", joined: "2025-03-05", totalOrders: 8, totalSpent: 2140.00, lastOrder: "2026-03-01" },
-  { id: 5, name: "Dr. Robert Kim", email: "rkim@kimchiro.com", business: "Kim Family Chiropractic", city: "Orinda, CA", type: "Chiropractor", status: "active", joined: "2025-06-20", totalOrders: 6, totalSpent: 1560.75, lastOrder: "2026-02-15" },
-  { id: 6, name: "Dr. Jennifer Wu", email: "jwu@eastbaypt.com", business: "East Bay PT & Sports", city: "Danville, CA", type: "Physical Therapy", status: "active", joined: "2025-08-12", totalOrders: 4, totalSpent: 980.00, lastOrder: "2026-01-20" },
-  { id: 7, name: "Dr. Carlos Rivera", email: "carlos@riveramd.com", business: "Rivera Sports Medicine", city: "San Ramon, CA", type: "Medical Doctor", status: "paused", joined: "2025-04-18", totalOrders: 3, totalSpent: 645.00, lastOrder: "2025-11-10" },
-];
-
-const APPLICANTS = [
-  { id: 101, name: "Dr. Sarah Mitchell", email: "sarah@mitchellchiro.com", business: "Mitchell Chiropractic", city: "Concord, CA", type: "Chiropractor", status: "pending", date: "2026-03-20" },
-  { id: 102, name: "Dr. James Park", email: "jpark@ptpro.com", business: "PT Pro Wellness", city: "Dublin, CA", type: "Physical Therapy", status: "pending", date: "2026-03-22" },
-  { id: 103, name: "Maria Gonzalez, LMT", email: "maria@healinghands.com", business: "Healing Hands Massage", city: "Martinez, CA", type: "Massage Therapy", status: "pending", date: "2026-03-23" },
-];
-
-const ORDERS = [
-  { id: "ORD-1042", customer: "Dr. Dale Giessman", date: "2026-03-18", total: 487.50, status: "shipped", items: 12 },
-  { id: "ORD-1039", customer: "Dr. Lisa Chen", date: "2026-03-12", total: 1240.00, status: "delivered", items: 28 },
-  { id: "ORD-1035", customer: "Dr. Mike Torres", date: "2026-03-05", total: 199.75, status: "delivered", items: 6 },
-  { id: "ORD-1031", customer: "Dr. Amy Patel", date: "2026-03-01", total: 340.00, status: "delivered", items: 10 },
-  { id: "ORD-1028", customer: "Dr. Dale Giessman", date: "2026-02-22", total: 695.00, status: "delivered", items: 16 },
-];
+// Types
+type Product = { id: string; name: string; subtitle: string; retail: number; img: string; badge: string | null; cat: string; color: string; sort_order: number };
+type Customer = { id: string; user_id: string; name: string; email: string; business: string; city: string; type: string; status: string; total_orders: number; total_spent: number; last_order_at: string | null; created_at: string };
+type Application = { id: string; name: string; email: string; business: string; city: string; phone: string; type: string; status: string; created_at: string };
+type Order = { id: string; order_number: string; customer_id: string; customer_name: string; customer_email: string; items: OrderItem[]; subtotal: number; tier_name: string; tier_discount: number; discount_amount: number; cc_fee: number; total: number; pay_method: string; notes: string; status: string; created_at: string };
+type OrderItem = { product_id: string; name: string; qty: number; unit_price: number; line_total: number };
 
 function getTier(s: number) {
   if (s >= 1000) return { name: "ELITE", disc: 0.20, color: "#E8C76A", next: null, at: null };
@@ -55,63 +27,210 @@ const Img = ({ src, alt, color, style }: { src: string; alt: string; color: stri
 };
 
 export default function App() {
+  // Auth state
+  const [session, setSession] = useState<any>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [customer, setCustomer] = useState<Customer | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Data state
+  const [products, setProducts] = useState<Product[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+
+  // UI state
   const [cart, setCart] = useState<Record<string, number>>({});
   const [view, setView] = useState("shop");
   const [filter, setFilter] = useState("all");
-  const [userType, setUserType] = useState<string | null>(null);
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
   const [loginError, setLoginError] = useState("");
   const [authView, setAuthView] = useState("login");
   const [orderNote, setOrderNote] = useState("");
   const [orderSuccess, setOrderSuccess] = useState(false);
+  const [orderSubmitting, setOrderSubmitting] = useState(false);
   const [anim, setAnim] = useState<string | null>(null);
   const [adminTab, setAdminTab] = useState("customers");
-  const [applicants, setApplicants] = useState(APPLICANTS);
-  const [selectedCustomer, setSelectedCustomer] = useState<typeof CUSTOMERS[number] | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [appSubmitted, setAppSubmitted] = useState(false);
   const [showPw, setShowPw] = useState(false);
   const [payMethod, setPayMethod] = useState("check");
+  const [appForm, setAppForm] = useState({ name: "", email: "", phone: "", business: "", city: "", type: "Chiropractor" });
 
+  // Auth listener
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session: s } }) => {
+      setSession(s);
+      if (s) loadUserData(s);
+      else setLoading(false);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(s);
+      if (s) loadUserData(s);
+      else { setLoading(false); setIsAdmin(false); setCustomer(null); }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Load products (always)
+  useEffect(() => {
+    supabase.from("products").select("*").eq("active", true).order("sort_order").then(({ data }) => {
+      if (data) setProducts(data as Product[]);
+    });
+  }, []);
+
+  const loadUserData = async (s: any) => {
+    setLoading(true);
+    const email = s.user.email;
+
+    // Check if admin
+    const { data: adminData } = await supabase.from("admin_emails").select("email").eq("email", email).single();
+    const admin = !!adminData;
+    setIsAdmin(admin);
+
+    // Get customer record
+    const { data: custData } = await supabase.from("customers").select("*").eq("email", email).single();
+    if (custData) setCustomer(custData as Customer);
+
+    if (admin) {
+      await loadAdminData();
+    }
+    setLoading(false);
+  };
+
+  const loadAdminData = async () => {
+    const [custRes, appRes, ordRes] = await Promise.all([
+      supabase.from("customers").select("*").order("total_spent", { ascending: false }),
+      supabase.from("applications").select("*").order("created_at", { ascending: false }),
+      supabase.from("orders").select("*").order("created_at", { ascending: false }),
+    ]);
+    if (custRes.data) setCustomers(custRes.data as Customer[]);
+    if (appRes.data) setApplications(appRes.data as Application[]);
+    if (ordRes.data) setOrders(ordRes.data as Order[]);
+  };
+
+  // Cart calculations
   const items = Object.entries(cart).filter(([, q]) => q > 0);
-  const wsSub = items.reduce((s, [id, q]) => s + (PRODUCTS.find(p => p.id === id)?.retail || 0) * 0.5 * q, 0);
+  const wsSub = items.reduce((s, [id, q]) => s + (products.find(p => p.id === id)?.retail || 0) * 0.5 * q, 0);
   const tier = getTier(wsSub);
-  const total = items.reduce((s, [id, q]) => { const p = PRODUCTS.find(p => p.id === id); return s + (p ? fp(p.retail, tier.disc) * q : 0); }, 0);
+  const total = items.reduce((s, [id, q]) => { const p = products.find(p => p.id === id); return s + (p ? fp(p.retail, tier.disc) * q : 0); }, 0);
   const count = items.reduce((s, [, q]) => s + q, 0);
-  const save = items.reduce((s, [id, q]) => { const p = PRODUCTS.find(p => p.id === id); return s + (p ? (p.retail - fp(p.retail, tier.disc)) * q : 0); }, 0);
+  const save = items.reduce((s, [id, q]) => { const p = products.find(p => p.id === id); return s + (p ? (p.retail - fp(p.retail, tier.disc)) * q : 0); }, 0);
 
   const add = (id: string, d: number) => { setAnim(id); setTimeout(() => setAnim(null), 300); setCart(p => ({ ...p, [id]: Math.max(0, (p[id] || 0) + d) })); };
   const setQty = (id: string, q: number) => setCart(p => ({ ...p, [id]: Math.max(0, q) }));
 
-  const login = () => {
+  // Auth functions
+  const login = async () => {
     setLoginError("");
     const email = loginForm.email.trim().toLowerCase();
     const pass = loginForm.password.trim();
-    if (email === "admin" && pass === "Active10Ollie") setUserType("admin");
-    else if (loginForm.email && loginForm.password) setUserType("wholesale");
-    else setLoginError("Please enter your credentials.");
+    if (!email || !pass) { setLoginError("Please enter your credentials."); return; }
+    const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
+    if (error) setLoginError(error.message === "Invalid login credentials" ? "Invalid email or password." : error.message);
   };
-  const logout = () => { setUserType(null); setLoginForm({ email: "", password: "" }); setView("shop"); setCart({}); setSelectedCustomer(null); };
-  const approve = (id: number) => setApplicants(p => p.map(a => a.id === id ? { ...a, status: "approved" } : a));
-  const reject = (id: number) => setApplicants(p => p.map(a => a.id === id ? { ...a, status: "rejected" } : a));
 
-  const filtered = filter === "all" ? PRODUCTS : PRODUCTS.filter(p => p.cat === filter);
+  const logout = async () => {
+    await supabase.auth.signOut();
+    setSession(null); setIsAdmin(false); setCustomer(null);
+    setLoginForm({ email: "", password: "" }); setView("shop"); setCart({}); setSelectedCustomer(null);
+  };
+
+  // Submit application
+  const submitApplication = async () => {
+    const { error } = await supabase.from("applications").insert({
+      name: appForm.name,
+      email: appForm.email,
+      phone: appForm.phone,
+      business: appForm.business,
+      city: appForm.city,
+      type: appForm.type,
+    });
+    if (!error) setAppSubmitted(true);
+  };
+
+  // Submit order
+  const submitOrder = async () => {
+    if (!customer || orderSubmitting) return;
+    setOrderSubmitting(true);
+
+    const orderItems: OrderItem[] = items.map(([id, q]) => {
+      const p = products.find(p => p.id === id)!;
+      const unitPrice = fp(p.retail, tier.disc);
+      return { product_id: id, name: p.name, qty: q, unit_price: unitPrice, line_total: unitPrice * q };
+    });
+
+    const ccFee = payMethod === "card" ? total * 0.0299 : 0;
+    const finalTotal = total + ccFee;
+
+    const { error } = await supabase.from("orders").insert({
+      order_number: "", // trigger will generate
+      customer_id: customer.id,
+      customer_name: customer.name,
+      customer_email: customer.email,
+      items: orderItems,
+      subtotal: wsSub,
+      tier_name: tier.name,
+      tier_discount: tier.disc,
+      discount_amount: wsSub - total,
+      cc_fee: ccFee,
+      total: finalTotal,
+      pay_method: payMethod,
+      notes: orderNote || null,
+    });
+
+    setOrderSubmitting(false);
+    if (!error) {
+      setOrderSuccess(true);
+    } else {
+      alert("Failed to submit order. Please try again.");
+    }
+  };
+
+  // Admin actions
+  const approveApp = async (id: string) => {
+    await supabase.from("applications").update({ status: "approved" }).eq("id", id);
+    setApplications(p => p.map(a => a.id === id ? { ...a, status: "approved" } : a));
+  };
+  const rejectApp = async (id: string) => {
+    await supabase.from("applications").update({ status: "rejected" }).eq("id", id);
+    setApplications(p => p.map(a => a.id === id ? { ...a, status: "rejected" } : a));
+  };
+  const updateOrderStatus = async (id: string, status: string) => {
+    await supabase.from("orders").update({ status }).eq("id", id);
+    setOrders(p => p.map(o => o.id === id ? { ...o, status } : o));
+  };
+
+  const filtered = filter === "all" ? products : products.filter(p => p.cat === filter);
   const bg: React.CSSProperties = { minHeight: "100vh", background: `linear-gradient(165deg, ${BDP} 0%, ${BBG} 40%, ${BD} 100%)`, fontFamily: "'DM Sans', sans-serif", color: "white" };
   const fonts = <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,500;9..40,700&family=Playfair+Display:wght@600;800&display=swap" rel="stylesheet" />;
   const css = <style>{`@keyframes su{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}@keyframes pu{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}.ch:hover{transform:translateY(-3px);box-shadow:0 16px 48px rgba(0,0,0,.35)}.ch{transition:all .25s ease}.bh:hover{filter:brightness(1.12)}.bh:active{transform:scale(.97)}input::-webkit-outer-spin-button,input::-webkit-inner-spin-button{-webkit-appearance:none}`}</style>;
   const inp: React.CSSProperties = { width: "100%", padding: "12px 16px", background: "rgba(255,255,255,.06)", border: `1px solid ${B}33`, borderRadius: 10, color: "white", fontSize: 15, outline: "none", boxSizing: "border-box" };
 
+  // Loading screen
+  if (loading) return (
+    <div style={{ ...bg, display: "flex", alignItems: "center", justifyContent: "center" }}>{fonts}{css}
+      <div style={{ textAlign: "center", animation: "su .5s ease" }}>
+        <div style={{ width: 48, height: 48, borderRadius: 12, background: `linear-gradient(135deg,${B},${BL})`, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 18, color: "white", margin: "0 auto 16px" }}>A10</div>
+        <p style={{ color: "rgba(255,255,255,.5)", fontSize: 14 }}>Loading...</p>
+      </div>
+    </div>
+  );
+
+  // Order success
   if (orderSuccess) return (
     <div style={{ ...bg, display: "flex", alignItems: "center", justifyContent: "center" }}>{fonts}{css}
       <div style={{ textAlign: "center", padding: 40, maxWidth: 500, animation: "su .5s ease" }}>
         <div style={{ width: 80, height: 80, borderRadius: "50%", background: `linear-gradient(135deg,${GR},#00D2A0)`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px", fontSize: 36 }}>✓</div>
         <h1 style={{ fontFamily: "'Playfair Display',serif", fontSize: 32, marginBottom: 12 }}>Order Submitted!</h1>
-        <p style={{ color: "rgba(255,255,255,.7)", fontSize: 16, lineHeight: 1.6, marginBottom: 32 }}>Your wholesale order has been sent to Active Formulations. Confirmation email incoming.</p>
+        <p style={{ color: "rgba(255,255,255,.7)", fontSize: 16, lineHeight: 1.6, marginBottom: 32 }}>Your wholesale order has been sent to Active Formulations. You'll receive a confirmation email shortly.</p>
         <button onClick={() => { setOrderSuccess(false); setCart({}); setView("shop"); }} className="bh" style={{ padding: "14px 32px", background: `linear-gradient(135deg,${B},${BL})`, border: "none", borderRadius: 10, color: "white", fontWeight: 700, fontSize: 15, cursor: "pointer" }}>Continue Shopping</button>
       </div>
     </div>
   );
 
-  if (!userType) return (
+  // LOGIN / APPLY SCREEN
+  if (!session) return (
     <div style={{ ...bg, display: "flex", alignItems: "center", justifyContent: "center", padding: "40px 20px" }}>{fonts}{css}
       <div style={{ maxWidth: 420, width: "100%", animation: "su .5s ease" }}>
         <div style={{ textAlign: "center", marginBottom: 40 }}>
@@ -137,9 +256,29 @@ export default function App() {
             <div style={{ background: "rgba(255,255,255,.04)", border: `1px solid ${B}33`, borderRadius: 20, padding: 32 }}>
               <h2 style={{ fontFamily: "'Playfair Display',serif", fontSize: 24, marginBottom: 8 }}>Apply for Access</h2>
               <p style={{ color: "rgba(255,255,255,.5)", fontSize: 14, marginBottom: 24 }}>We'll review within 24 hours.</p>
-              {["Practice Name", "Full Name", "Email", "Phone"].map((l, i) => (<div key={i} style={{ marginBottom: 16 }}><label style={{ display: "block", color: "rgba(255,255,255,.5)", fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: ".8px" }}>{l}</label><input style={inp} /></div>))}
-              <div style={{ marginBottom: 24 }}><label style={{ display: "block", color: "rgba(255,255,255,.5)", fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: ".8px" }}>Type</label><select style={{ ...inp, color: "rgba(255,255,255,.7)" }}><option>Chiropractor</option><option>Physical Therapy</option><option>Massage Therapy</option><option>Medical Doctor</option><option>Other</option></select></div>
-              <button onClick={() => setAppSubmitted(true)} className="bh" style={{ width: "100%", padding: 14, background: `linear-gradient(135deg,${B},${BL})`, border: "none", borderRadius: 10, color: "white", fontWeight: 700, fontSize: 15, cursor: "pointer", marginBottom: 12 }}>Submit Application</button>
+              {[
+                { label: "Practice Name", key: "business" },
+                { label: "Full Name", key: "name" },
+                { label: "Email", key: "email" },
+                { label: "Phone", key: "phone" },
+                { label: "City / State", key: "city" },
+              ].map((field) => (
+                <div key={field.key} style={{ marginBottom: 16 }}>
+                  <label style={{ display: "block", color: "rgba(255,255,255,.5)", fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: ".8px" }}>{field.label}</label>
+                  <input
+                    value={(appForm as any)[field.key]}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAppForm(p => ({ ...p, [field.key]: e.target.value }))}
+                    style={inp}
+                  />
+                </div>
+              ))}
+              <div style={{ marginBottom: 24 }}>
+                <label style={{ display: "block", color: "rgba(255,255,255,.5)", fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: ".8px" }}>Type</label>
+                <select value={appForm.type} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setAppForm(p => ({ ...p, type: e.target.value }))} style={{ ...inp, color: "rgba(255,255,255,.7)" }}>
+                  <option>Chiropractor</option><option>Physical Therapy</option><option>Massage Therapy</option><option>Medical Doctor</option><option>Other</option>
+                </select>
+              </div>
+              <button onClick={submitApplication} className="bh" style={{ width: "100%", padding: 14, background: `linear-gradient(135deg,${B},${BL})`, border: "none", borderRadius: 10, color: "white", fontWeight: 700, fontSize: 15, cursor: "pointer", marginBottom: 12 }}>Submit Application</button>
               <button onClick={() => setAuthView("login")} style={{ width: "100%", padding: 12, background: "none", border: `1px solid ${B}33`, borderRadius: 10, color: "rgba(255,255,255,.6)", fontSize: 14, cursor: "pointer" }}>Already have an account? Sign in</button>
             </div>
           )
@@ -159,9 +298,12 @@ export default function App() {
     </div>
   );
 
-  // ADMIN
-  if (userType === "admin") {
-    const pending = applicants.filter(a => a.status === "pending");
+  // ADMIN PANEL
+  if (isAdmin) {
+    const pending = applications.filter(a => a.status === "pending");
+    const monthOrders = orders.filter(o => { const d = new Date(o.created_at); const now = new Date(); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); });
+    const monthRevenue = monthOrders.reduce((s, o) => s + o.total, 0);
+
     return (
       <div style={bg}>{fonts}{css}
         <header style={{ borderBottom: `1px solid ${B}22`, padding: "14px 24px", position: "sticky", top: 0, zIndex: 100, background: `${BDP}EE`, backdropFilter: "blur(20px)" }}>
@@ -170,13 +312,16 @@ export default function App() {
               <div style={{ width: 36, height: 36, borderRadius: 8, background: `linear-gradient(135deg,${B},${BL})`, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12 }}>A10</div>
               <div><div style={{ fontSize: 16, fontWeight: 700 }}>Active 10 Wholesale</div><div style={{ fontSize: 11, color: BL, letterSpacing: "1px", textTransform: "uppercase" }}>Admin</div></div>
             </div>
-            <button onClick={logout} className="bh" style={{ padding: "8px 16px", background: "rgba(255,255,255,.06)", border: `1px solid ${B}33`, borderRadius: 8, color: "rgba(255,255,255,.6)", fontSize: 13, cursor: "pointer" }}>Log Out</button>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <button onClick={loadAdminData} className="bh" style={{ padding: "8px 16px", background: "rgba(255,255,255,.06)", border: `1px solid ${B}33`, borderRadius: 8, color: "rgba(255,255,255,.6)", fontSize: 13, cursor: "pointer" }}>↻ Refresh</button>
+              <button onClick={logout} className="bh" style={{ padding: "8px 16px", background: "rgba(255,255,255,.06)", border: `1px solid ${B}33`, borderRadius: 8, color: "rgba(255,255,255,.6)", fontSize: 13, cursor: "pointer" }}>Log Out</button>
+            </div>
           </div>
         </header>
         <div style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 24px 80px" }}>
           {/* Stats */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 14, marginBottom: 28 }}>
-            {[{ l: "Pending", v: pending.length, c: "#FFA940" }, { l: "Active Customers", v: CUSTOMERS.filter(c => c.status === "active").length, c: GR }, { l: "Orders (Mar)", v: ORDERS.length, c: BL }, { l: "Revenue (Mar)", v: "$2,962", c: "#E8C76A" }].map((s, i) => (
+            {[{ l: "Pending Apps", v: pending.length, c: "#FFA940" }, { l: "Active Customers", v: customers.filter(c => c.status === "active").length, c: GR }, { l: "Orders (Month)", v: monthOrders.length, c: BL }, { l: "Revenue (Month)", v: `$${monthRevenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, c: "#E8C76A" }].map((s, i) => (
               <div key={i} style={{ background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 14, padding: "18px 20px", animation: `su .5s ease ${i * .07}s both` }}>
                 <div style={{ fontSize: 11, color: "rgba(255,255,255,.4)", textTransform: "uppercase", letterSpacing: ".8px", marginBottom: 6 }}>{s.l}</div>
                 <div style={{ fontSize: 26, fontWeight: 800, color: s.c }}>{s.v}</div>
@@ -187,14 +332,17 @@ export default function App() {
           {/* Tabs */}
           <div style={{ display: "flex", gap: 4, marginBottom: 24, background: "rgba(255,255,255,.03)", borderRadius: 12, padding: 4 }}>
             {["customers", "applicants", "orders"].map(t => (
-              <button key={t} onClick={() => { setAdminTab(t); setSelectedCustomer(null); }} style={{ flex: 1, padding: "10px 16px", borderRadius: 10, border: "none", background: adminTab === t ? `${B}33` : "transparent", color: adminTab === t ? "white" : "rgba(255,255,255,.5)", fontWeight: 600, fontSize: 13, cursor: "pointer", textTransform: "capitalize", transition: "all .2s" }}>{t}</button>
+              <button key={t} onClick={() => { setAdminTab(t); setSelectedCustomer(null); }} style={{ flex: 1, padding: "10px 16px", borderRadius: 10, border: "none", background: adminTab === t ? `${B}33` : "transparent", color: adminTab === t ? "white" : "rgba(255,255,255,.5)", fontWeight: 600, fontSize: 13, cursor: "pointer", textTransform: "capitalize", transition: "all .2s" }}>
+                {t}{t === "applicants" && pending.length > 0 ? ` (${pending.length})` : ""}
+              </button>
             ))}
           </div>
 
           {/* CUSTOMERS TAB */}
           {adminTab === "customers" && !selectedCustomer && (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {CUSTOMERS.map((c, i) => (
+              {customers.length === 0 && <div style={{ textAlign: "center", padding: 40, color: "rgba(255,255,255,.4)" }}>No customers yet</div>}
+              {customers.map((c, i) => (
                 <div key={c.id} onClick={() => setSelectedCustomer(c)} style={{ background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 14, padding: "18px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", transition: "all .2s", animation: `su .4s ease ${i * .05}s both` }} onMouseOver={(e: React.MouseEvent<HTMLDivElement>) => (e.currentTarget.style.borderColor = `${B}55`)} onMouseOut={(e: React.MouseEvent<HTMLDivElement>) => (e.currentTarget.style.borderColor = `${B}22`)}>
                   <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
                     <div style={{ width: 44, height: 44, borderRadius: 12, background: `${B}22`, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 16, color: BL }}>{c.name.split(" ").map(n => n[0]).join("").slice(0, 2)}</div>
@@ -204,8 +352,8 @@ export default function App() {
                     </div>
                   </div>
                   <div style={{ textAlign: "right" }}>
-                    <div style={{ fontWeight: 700, fontSize: 16, color: BL }}>${c.totalSpent.toLocaleString()}</div>
-                    <div style={{ fontSize: 11, color: "rgba(255,255,255,.35)" }}>{c.totalOrders} orders · Last: {c.lastOrder}</div>
+                    <div style={{ fontWeight: 700, fontSize: 16, color: BL }}>${c.total_spent.toLocaleString()}</div>
+                    <div style={{ fontSize: 11, color: "rgba(255,255,255,.35)" }}>{c.total_orders} orders</div>
                   </div>
                 </div>
               ))}
@@ -227,7 +375,7 @@ export default function App() {
                   <div style={{ marginLeft: "auto", padding: "6px 14px", borderRadius: 8, background: selectedCustomer.status === "active" ? `${GR}22` : "rgba(255,160,64,.15)", color: selectedCustomer.status === "active" ? GR : "#FFA940", fontSize: 12, fontWeight: 600, textTransform: "capitalize" }}>{selectedCustomer.status}</div>
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 14 }}>
-                  {[{ l: "Total Spent", v: `$${selectedCustomer.totalSpent.toLocaleString()}`, c: "#E8C76A" }, { l: "Total Orders", v: selectedCustomer.totalOrders, c: BL }, { l: "Member Since", v: selectedCustomer.joined, c: "rgba(255,255,255,.7)" }, { l: "Type", v: selectedCustomer.type, c: GR }].map((s, i) => (
+                  {[{ l: "Total Spent", v: `$${selectedCustomer.total_spent.toLocaleString()}`, c: "#E8C76A" }, { l: "Total Orders", v: selectedCustomer.total_orders, c: BL }, { l: "Member Since", v: new Date(selectedCustomer.created_at).toLocaleDateString(), c: "rgba(255,255,255,.7)" }, { l: "Type", v: selectedCustomer.type, c: GR }].map((s, i) => (
                     <div key={i} style={{ background: "rgba(255,255,255,.03)", borderRadius: 12, padding: "14px 16px" }}>
                       <div style={{ fontSize: 11, color: "rgba(255,255,255,.35)", textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 4 }}>{s.l}</div>
                       <div style={{ fontSize: 18, fontWeight: 700, color: s.c }}>{s.v}</div>
@@ -237,13 +385,13 @@ export default function App() {
               </div>
               <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>Order History</h3>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {ORDERS.filter(o => o.customer === selectedCustomer.name).map(o => (
+                {orders.filter(o => o.customer_id === selectedCustomer.id).map(o => (
                   <div key={o.id} style={{ background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 12, padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <div><div style={{ fontWeight: 600, fontSize: 14 }}>{o.id}</div><div style={{ fontSize: 12, color: "rgba(255,255,255,.4)" }}>{o.date} · {o.items} items</div></div>
-                    <div style={{ textAlign: "right" }}><div style={{ fontWeight: 700, color: BL }}>${o.total.toFixed(2)}</div><div style={{ fontSize: 11, color: o.status === "shipped" ? "#FFA940" : GR, textTransform: "capitalize" }}>{o.status}</div></div>
+                    <div><div style={{ fontWeight: 600, fontSize: 14 }}>{o.order_number}</div><div style={{ fontSize: 12, color: "rgba(255,255,255,.4)" }}>{new Date(o.created_at).toLocaleDateString()} · {o.items.reduce((s: number, i: OrderItem) => s + i.qty, 0)} items</div></div>
+                    <div style={{ textAlign: "right" }}><div style={{ fontWeight: 700, color: BL }}>${o.total.toFixed(2)}</div><div style={{ fontSize: 11, color: o.status === "shipped" ? "#FFA940" : o.status === "pending" ? "rgba(255,255,255,.5)" : GR, textTransform: "capitalize" }}>{o.status}</div></div>
                   </div>
                 ))}
-                {ORDERS.filter(o => o.customer === selectedCustomer.name).length === 0 && <div style={{ textAlign: "center", padding: 30, color: "rgba(255,255,255,.3)" }}>No orders found</div>}
+                {orders.filter(o => o.customer_id === selectedCustomer.id).length === 0 && <div style={{ textAlign: "center", padding: 30, color: "rgba(255,255,255,.3)" }}>No orders found</div>}
               </div>
             </div>
           )}
@@ -251,14 +399,22 @@ export default function App() {
           {/* APPLICANTS TAB */}
           {adminTab === "applicants" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {pending.length === 0 && <div style={{ textAlign: "center", padding: 40, color: "rgba(255,255,255,.4)" }}>No pending applications</div>}
-              {pending.map(a => (
+              {applications.length === 0 && <div style={{ textAlign: "center", padding: 40, color: "rgba(255,255,255,.4)" }}>No applications yet</div>}
+              {applications.map(a => (
                 <div key={a.id} style={{ background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 14, padding: "18px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16, animation: "su .4s ease" }}>
-                  <div><div style={{ fontWeight: 700, fontSize: 15 }}>{a.name}</div><div style={{ fontSize: 13, color: "rgba(255,255,255,.5)" }}>{a.business} · {a.type} · {a.city}</div><div style={{ fontSize: 12, color: "rgba(255,255,255,.3)", marginTop: 2 }}>{a.email} · Applied {a.date}</div></div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button onClick={() => approve(a.id)} className="bh" style={{ padding: "10px 20px", background: `linear-gradient(135deg,${GR},#00D2A0)`, border: "none", borderRadius: 8, color: "white", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>Approve</button>
-                    <button onClick={() => reject(a.id)} className="bh" style={{ padding: "10px 20px", background: "rgba(255,80,80,.12)", border: "1px solid rgba(255,80,80,.25)", borderRadius: 8, color: "#FF6B6B", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>Reject</button>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 15 }}>{a.name}</div>
+                    <div style={{ fontSize: 13, color: "rgba(255,255,255,.5)" }}>{a.business} · {a.type} · {a.city}</div>
+                    <div style={{ fontSize: 12, color: "rgba(255,255,255,.3)", marginTop: 2 }}>{a.email} · {a.phone} · Applied {new Date(a.created_at).toLocaleDateString()}</div>
                   </div>
+                  {a.status === "pending" ? (
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button onClick={() => approveApp(a.id)} className="bh" style={{ padding: "10px 20px", background: `linear-gradient(135deg,${GR},#00D2A0)`, border: "none", borderRadius: 8, color: "white", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>Approve</button>
+                      <button onClick={() => rejectApp(a.id)} className="bh" style={{ padding: "10px 20px", background: "rgba(255,80,80,.12)", border: "1px solid rgba(255,80,80,.25)", borderRadius: 8, color: "#FF6B6B", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>Reject</button>
+                    </div>
+                  ) : (
+                    <div style={{ padding: "6px 14px", borderRadius: 8, background: a.status === "approved" ? `${GR}22` : "rgba(255,80,80,.12)", color: a.status === "approved" ? GR : "#FF6B6B", fontSize: 12, fontWeight: 600, textTransform: "capitalize" }}>{a.status}</div>
+                  )}
                 </div>
               ))}
             </div>
@@ -267,10 +423,31 @@ export default function App() {
           {/* ORDERS TAB */}
           {adminTab === "orders" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {ORDERS.map((o, i) => (
-                <div key={o.id} style={{ background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 14, padding: "18px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", animation: `su .4s ease ${i * .05}s both` }}>
-                  <div><div style={{ fontWeight: 700, fontSize: 15 }}>{o.id}</div><div style={{ fontSize: 13, color: "rgba(255,255,255,.5)" }}>{o.customer} · {o.items} items</div></div>
-                  <div style={{ textAlign: "right" }}><div style={{ fontWeight: 700, fontSize: 18, color: BL }}>${o.total.toFixed(2)}</div><div style={{ fontSize: 12, color: o.status === "shipped" ? "#FFA940" : GR, fontWeight: 500, textTransform: "capitalize" }}>{o.status} · {o.date}</div></div>
+              {orders.length === 0 && <div style={{ textAlign: "center", padding: 40, color: "rgba(255,255,255,.4)" }}>No orders yet</div>}
+              {orders.map((o, i) => (
+                <div key={o.id} style={{ background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 14, padding: "18px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, animation: `su .4s ease ${i * .05}s both` }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 15 }}>{o.order_number}</div>
+                    <div style={{ fontSize: 13, color: "rgba(255,255,255,.5)" }}>{o.customer_name} · {o.items.reduce((s: number, item: OrderItem) => s + item.qty, 0)} items · {o.pay_method === "card" ? "💳 Card" : "📄 Check"}</div>
+                    {o.notes && <div style={{ fontSize: 12, color: "rgba(255,255,255,.3)", marginTop: 2 }}>Note: {o.notes}</div>}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <select
+                      value={o.status}
+                      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateOrderStatus(o.id, e.target.value)}
+                      style={{ padding: "6px 10px", background: "rgba(255,255,255,.06)", border: `1px solid ${B}33`, borderRadius: 8, color: "white", fontSize: 12, cursor: "pointer" }}
+                    >
+                      <option value="pending">Pending</option>
+                      <option value="confirmed">Confirmed</option>
+                      <option value="shipped">Shipped</option>
+                      <option value="delivered">Delivered</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontWeight: 700, fontSize: 18, color: BL }}>${o.total.toFixed(2)}</div>
+                      <div style={{ fontSize: 12, color: "rgba(255,255,255,.35)" }}>{new Date(o.created_at).toLocaleDateString()}</div>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -290,6 +467,7 @@ export default function App() {
             <div><div style={{ fontSize: 16, fontWeight: 700 }}>Active Formulations</div><div style={{ fontSize: 11, color: BL, letterSpacing: "1.5px", textTransform: "uppercase" }}>Wholesale</div></div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            {customer && <span style={{ fontSize: 12, color: "rgba(255,255,255,.4)" }}>Hi, {customer.name.split(" ")[0]}</span>}
             <button onClick={logout} style={{ padding: "6px 12px", background: "none", border: "none", color: "rgba(255,255,255,.4)", fontSize: 12, cursor: "pointer" }}>Log Out</button>
             <button onClick={() => setView(view === "cart" ? "shop" : "cart")} className="bh" style={{ padding: "10px 20px", background: count > 0 ? `linear-gradient(135deg,${B},${BL})` : "rgba(255,255,255,.06)", border: count > 0 ? "none" : `1px solid ${B}33`, borderRadius: 10, color: "white", fontWeight: 600, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>🛒 {count > 0 ? `${count} · $${total.toFixed(2)}` : "Cart"}</button>
           </div>
@@ -366,7 +544,7 @@ export default function App() {
               </div>
             ) : <>
               <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
-                {items.map(([id, q]) => { const p = PRODUCTS.find(x => x.id === id); if (!p) return null; const f = fp(p.retail, tier.disc); return (
+                {items.map(([id, q]) => { const p = products.find(x => x.id === id); if (!p) return null; const f = fp(p.retail, tier.disc); return (
                   <div key={id} style={{ display: "flex", alignItems: "center", gap: 14, background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 14, padding: 14 }}>
                     <div style={{ width: 56, height: 56, borderRadius: 10, background: p.color, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}><Img src={p.img} alt={p.name} color={p.color} style={{ maxWidth: "75%", maxHeight: "75%", objectFit: "contain" }} /></div>
                     <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 600, fontSize: 14 }}>{p.name}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,.4)" }}>{p.subtitle}</div><div style={{ fontSize: 13, color: BL, fontWeight: 600, marginTop: 2 }}>${f.toFixed(2)} ea</div></div>
@@ -402,7 +580,7 @@ export default function App() {
 
               {/* Order Summary */}
               <div style={{ background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 16, padding: 22, marginBottom: 16 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14 }}><span style={{ color: "rgba(255,255,255,.5)" }}>Retail</span><span style={{ textDecoration: "line-through", color: "rgba(255,255,255,.3)" }}>${items.reduce((s, [id, q]) => s + (PRODUCTS.find(p => p.id === id)?.retail || 0) * q, 0).toFixed(2)}</span></div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14 }}><span style={{ color: "rgba(255,255,255,.5)" }}>Retail</span><span style={{ textDecoration: "line-through", color: "rgba(255,255,255,.3)" }}>${items.reduce((s, [id, q]) => s + (products.find(p => p.id === id)?.retail || 0) * q, 0).toFixed(2)}</span></div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14 }}><span style={{ color: "rgba(255,255,255,.5)" }}>Wholesale (50%)</span><span>${wsSub.toFixed(2)}</span></div>
                 {tier.disc > 0 && <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14 }}><span style={{ color: GR }}>{tier.name} ({(tier.disc * 100).toFixed(0)}% off)</span><span style={{ color: GR }}>-${(wsSub - total).toFixed(2)}</span></div>}
                 {payMethod === "card" && <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14 }}><span style={{ color: "#FFA940" }}>Credit Card Fee (2.99%)</span><span style={{ color: "#FFA940" }}>+${(total * 0.0299).toFixed(2)}</span></div>}
@@ -417,7 +595,7 @@ export default function App() {
               </div>
 
               {wsSub < 50 ? <div style={{ textAlign: "center", padding: 14, background: "rgba(255,80,80,.08)", borderRadius: 12, border: "1px solid rgba(255,80,80,.15)", color: "#FF6B6B", fontSize: 14 }}>Minimum $50 — add ${(50 - wsSub).toFixed(2)} more</div>
-              : <button onClick={() => setOrderSuccess(true)} className="bh" style={{ width: "100%", padding: 15, background: `linear-gradient(135deg,${B},${BL})`, border: "none", borderRadius: 12, color: "white", fontWeight: 800, fontSize: 16, cursor: "pointer" }}>Submit Order · ${payMethod === "card" ? (total + total * 0.0299).toFixed(2) : total.toFixed(2)}</button>}
+              : <button onClick={submitOrder} disabled={orderSubmitting} className="bh" style={{ width: "100%", padding: 15, background: orderSubmitting ? "rgba(255,255,255,.1)" : `linear-gradient(135deg,${B},${BL})`, border: "none", borderRadius: 12, color: "white", fontWeight: 800, fontSize: 16, cursor: orderSubmitting ? "not-allowed" : "pointer" }}>{orderSubmitting ? "Submitting..." : `Submit Order · $${payMethod === "card" ? (total + total * 0.0299).toFixed(2) : total.toFixed(2)}`}</button>}
             </>}
           </div>
         )}
