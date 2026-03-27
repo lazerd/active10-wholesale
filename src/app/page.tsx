@@ -138,24 +138,24 @@ export default function App() {
 
 // Submit application
   const submitApplication = async () => {
-    const { data, error } = await supabase.from("applications").insert({
+    const record = {
       name: appForm.name,
       email: appForm.email,
       phone: appForm.phone,
       business: appForm.business,
       city: appForm.city,
       type: appForm.type,
-    }).select().single();
+    };
+    const { error } = await supabase.from("applications").insert(record);
     if (!error) {
       setAppSubmitted(true);
       fetch("/api/webhook", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "application", record: data }),
+        body: JSON.stringify({ type: "application", record }),
       }).catch(() => {});
     }
   };
-
   // Submit order
   const submitOrder = async () => {
     if (!customer || orderSubmitting) return;
