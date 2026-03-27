@@ -136,7 +136,7 @@ export default function App() {
     setLoginForm({ email: "", password: "" }); setView("shop"); setCart({}); setSelectedCustomer(null);
   };
 
-  // Submit application
+// Submit application
   const submitApplication = async () => {
     const { data, error } = await supabase.from("applications").insert({
       name: appForm.name,
@@ -148,14 +148,12 @@ export default function App() {
     }).select().single();
     if (!error) {
       setAppSubmitted(true);
-      // Send notification email
       fetch("/api/webhook", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: "application", record: data }),
       }).catch(() => {});
     }
-  };
   };
 
   // Submit order
@@ -191,7 +189,6 @@ export default function App() {
     setOrderSubmitting(false);
     if (!error && data) {
       setOrderSuccess(true);
-      // Send notification email
       fetch("/api/webhook", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -201,35 +198,6 @@ export default function App() {
       alert("Failed to submit order. Please try again.");
     }
   };
-    });
-
-    const ccFee = payMethod === "card" ? total * 0.0299 : 0;
-    const finalTotal = total + ccFee;
-
-    const { error } = await supabase.from("orders").insert({
-      order_number: "", // trigger will generate
-      customer_id: customer.id,
-      customer_name: customer.name,
-      customer_email: customer.email,
-      items: orderItems,
-      subtotal: wsSub,
-      tier_name: tier.name,
-      tier_discount: tier.disc,
-      discount_amount: wsSub - total,
-      cc_fee: ccFee,
-      total: finalTotal,
-      pay_method: payMethod,
-      notes: orderNote || null,
-    });
-
-    setOrderSubmitting(false);
-    if (!error) {
-      setOrderSuccess(true);
-    } else {
-      alert("Failed to submit order. Please try again.");
-    }
-  };
-
   // Admin actions
   const approveApp = async (id: string) => {
     await supabase.from("applications").update({ status: "approved" }).eq("id", id);
