@@ -55,7 +55,7 @@ export default function App() {
   const [appSubmitted, setAppSubmitted] = useState(false);
   const [showPw, setShowPw] = useState(false);
   const [payMethod, setPayMethod] = useState("check");
-  const [appForm, setAppForm] = useState({ name: "", email: "", phone: "", business: "", city: "", type: "Chiropractor" });
+  const [appForm, setAppForm] = useState({ name: "", email: "", phone: "", business: "", address: "", city: "", state: "", zip: "", type: "Chiropractor" });
 
   // Auth listener
   useEffect(() => {
@@ -143,7 +143,7 @@ export default function App() {
       email: appForm.email,
       phone: appForm.phone,
       business: appForm.business,
-      city: appForm.city,
+      city: appForm.city + ", " + appForm.state + " " + appForm.zip,
       type: appForm.type,
     };
     const { error } = await supabase.from("applications").insert(record);
@@ -287,7 +287,10 @@ export default function App() {
                 { label: "Full Name", key: "name" },
                 { label: "Email", key: "email" },
                 { label: "Phone", key: "phone" },
-                { label: "City / State", key: "city" },
+                { label: "Street Address", key: "address" },
+                { label: "City", key: "city" },
+                { label: "State", key: "state" },
+                { label: "Zip Code", key: "zip" },
               ].map((field) => (
                 <div key={field.key} style={{ marginBottom: 16 }}>
                   <label style={{ display: "block", color: "rgba(255,255,255,.5)", fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: ".8px" }}>{field.label}</label>
