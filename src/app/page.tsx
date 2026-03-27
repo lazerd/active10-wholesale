@@ -200,16 +200,31 @@ export default function App() {
   };
   // Admin actions
   const approveApp = async (id: string) => {
-    await supabase.from("applications").update({ status: "approved" }).eq("id", id);
-    setApplications(p => p.map(a => a.id === id ? { ...a, status: "approved" } : a));
+    const res = await fetch("/api/approve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ applicationId: id, action: "approve" }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      setApplications(p => p.map(a => a.id === id ? { ...a, status: "approved" } : a));
+      loadAdminData();
+    } else {
+      alert("Error: " + (data.error || "Failed to approve"));
+    }
   };
   const rejectApp = async (id: string) => {
-    await supabase.from("applications").update({ status: "rejected" }).eq("id", id);
-    setApplications(p => p.map(a => a.id === id ? { ...a, status: "rejected" } : a));
-  };
-  const updateOrderStatus = async (id: string, status: string) => {
-    await supabase.from("orders").update({ status }).eq("id", id);
-    setOrders(p => p.map(o => o.id === id ? { ...o, status } : o));
+    const res = await fetch("/api/approve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ applicationId: id, action: "reject" }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      setApplications(p => p.map(a => a.id === id ? { ...a, status: "rejected" } : a));
+    } else {
+      alert("Error: " + (data.error || "Failed to reject"));
+    }
   };
 
   const filtered = filter === "all" ? products : products.filter(p => p.cat === filter);
