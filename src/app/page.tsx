@@ -55,6 +55,11 @@ export default function App() {
   const [appSubmitted, setAppSubmitted] = useState(false);
   const [showPw, setShowPw] = useState(false);
   const [payMethod, setPayMethod] = useState("check");
+  const [showChangePw, setShowChangePw] = useState(false);
+  const [newPw, setNewPw] = useState("");
+  const [pwMsg, setPwMsg] = useState("");
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetMsg, setResetMsg] = useState("");
   const [appForm, setAppForm] = useState({ name: "", email: "", phone: "", business: "", address: "", city: "", state: "", zip: "", type: "Chiropractor" });
 
   // Auth listener
@@ -121,6 +126,19 @@ export default function App() {
   const setQty = (id: string, q: number) => setCart(p => ({ ...p, [id]: Math.max(0, q) }));
 
   // Auth functions
+  const changePassword = async () => {
+    if (newPw.length < 6) { setPwMsg("Password must be at least 6 characters."); return; }
+    const { error } = await supabase.auth.updateUser({ password: newPw });
+    if (!error) { setPwMsg("Password updated!"); setNewPw(""); setTimeout(() => { setShowChangePw(false); setPwMsg(""); }, 2000); }
+    else setPwMsg("Error: " + error.message);
+  };
+
+  const forgotPassword = async () => {
+    if (!resetEmail) { setResetMsg("Enter your email."); return; }
+    const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, { redirectTo: "https://wholesale.getactive10.com" });
+    if (!error) setResetMsg("Reset link sent! Check your inbox.");
+    else setResetMsg("Error: " + error.message);
+  };
   const login = async () => {
     setLoginError("");
     const email = loginForm.email.trim().toLowerCase();
@@ -323,6 +341,11 @@ const updateOrderStatus = async (id: string, status: string) => {
             <div style={{ marginBottom: 16 }}><label style={{ display: "block", color: "rgba(255,255,255,.5)", fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: ".8px" }}>Email</label><input value={loginForm.email} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLoginForm(p => ({ ...p, email: e.target.value }))} onKeyDown={(e: React.KeyboardEvent) => e.key === "Enter" && login()} style={inp} placeholder="your@email.com" /></div>
             <div style={{ marginBottom: 24 }}><label style={{ display: "block", color: "rgba(255,255,255,.5)", fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: ".8px" }}>Password</label><div style={{ position: "relative" }}><input type={showPw ? "text" : "password"} value={loginForm.password} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLoginForm(p => ({ ...p, password: e.target.value }))} onKeyDown={(e: React.KeyboardEvent) => e.key === "Enter" && login()} style={{ ...inp, paddingRight: 44 }} placeholder="••••••••" /><button onClick={() => setShowPw(p => !p)} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", padding: 6, color: showPw ? BL : "rgba(255,255,255,.35)", fontSize: 14 }}>{showPw ? "🙈" : "👁"}</button></div></div>
             <button onClick={login} className="bh" style={{ width: "100%", padding: 14, background: `linear-gradient(135deg,${B},${BL})`, border: "none", borderRadius: 10, color: "white", fontWeight: 700, fontSize: 15, cursor: "pointer", marginBottom: 12 }}>Sign In</button>
+           {resetMsg && <div style={{ background: resetMsg.includes("Error") ? "rgba(255,80,80,.1)" : `${GR}15`, border: resetMsg.includes("Error") ? "1px solid rgba(255,80,80,.3)" : `1px solid ${GR}33`, borderRadius: 8, padding: "10px 14px", marginBottom: 12, fontSize: 13, color: resetMsg.includes("Error") ? "#FF6B6B" : GR }}>{resetMsg}</div>}
+            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+              <input value={resetEmail} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setResetEmail(e.target.value)} style={{ ...inp, flex: 1 }} placeholder="Enter your email" />
+              <button onClick={forgotPassword} style={{ padding: "12px 16px", background: "rgba(255,255,255,.06)", border: `1px solid ${B}33`, borderRadius: 10, color: "rgba(255,255,255,.6)", fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>Reset Password</button>
+            </div>
             <button onClick={() => setAuthView("apply")} style={{ width: "100%", padding: 12, background: "none", border: `1px solid ${B}33`, borderRadius: 10, color: "rgba(255,255,255,.6)", fontSize: 14, cursor: "pointer" }}>New? Apply for wholesale access</button>
           </div>
         )}
@@ -501,11 +524,22 @@ const updateOrderStatus = async (id: string, status: string) => {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             {customer && <span style={{ fontSize: 12, color: "rgba(255,255,255,.4)" }}>Hi, {customer.name.split(" ")[0]}</span>}
+            <button onClick={() => setShowChangePw(!showChangePw)} style={{ padding: "6px 12px", background: "none", border: "none", color: "rgba(255,255,255,.4)", fontSize: 12, cursor: "pointer" }}>Change Password</button>
             <button onClick={logout} style={{ padding: "6px 12px", background: "none", border: "none", color: "rgba(255,255,255,.4)", fontSize: 12, cursor: "pointer" }}>Log Out</button>
             <button onClick={() => setView(view === "cart" ? "shop" : "cart")} className="bh" style={{ padding: "10px 20px", background: count > 0 ? `linear-gradient(135deg,${B},${BL})` : "rgba(255,255,255,.06)", border: count > 0 ? "none" : `1px solid ${B}33`, borderRadius: 10, color: "white", fontWeight: 600, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>🛒 {count > 0 ? `${count} · $${total.toFixed(2)}` : "Cart"}</button>
           </div>
         </div>
       </header>
+      {showChangePw && (
+        <div style={{ maxWidth: 400, margin: "20px auto", padding: "20px 24px", background: "rgba(255,255,255,.04)", border: `1px solid ${B}33`, borderRadius: 16 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>Change Password</h3>
+          {pwMsg && <div style={{ background: pwMsg.includes("Error") ? "rgba(255,80,80,.1)" : `${GR}15`, border: pwMsg.includes("Error") ? "1px solid rgba(255,80,80,.3)" : `1px solid ${GR}33`, borderRadius: 8, padding: "10px 14px", marginBottom: 12, fontSize: 13, color: pwMsg.includes("Error") ? "#FF6B6B" : GR }}>{pwMsg}</div>}
+          <div style={{ display: "flex", gap: 8 }}>
+            <input type="password" value={newPw} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewPw(e.target.value)} placeholder="New password (min 6 chars)" style={{ ...inp, flex: 1 }} />
+            <button onClick={changePassword} className="bh" style={{ padding: "12px 20px", background: `linear-gradient(135deg,${B},${BL})`, border: "none", borderRadius: 10, color: "white", fontWeight: 600, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>Update</button>
+          </div>
+        </div>
+      )}
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: "24px 24px 100px" }}>
         {view === "shop" && (
           <div style={{ background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 16, padding: "18px 24px", marginBottom: 24, animation: "su .5s ease" }}>
