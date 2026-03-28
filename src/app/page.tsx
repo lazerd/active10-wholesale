@@ -226,7 +226,11 @@ export default function App() {
       alert("Error: " + (data.error || "Failed to reject"));
     }
   };
-
+const updateOrderStatus = async (id: string, status: string) => {
+    await supabase.from("orders").update({ status }).eq("id", id);
+    setOrders(p => p.map(o => o.id === id ? { ...o, status } : o));
+  };
+  
   const filtered = filter === "all" ? products : products.filter(p => p.cat === filter);
   const bg: React.CSSProperties = { minHeight: "100vh", background: `linear-gradient(165deg, ${BDP} 0%, ${BBG} 40%, ${BD} 100%)`, fontFamily: "'DM Sans', sans-serif", color: "white" };
   const fonts = <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,500;9..40,700&family=Playfair+Display:wght@600;800&display=swap" rel="stylesheet" />;
