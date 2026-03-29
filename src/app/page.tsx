@@ -6,9 +6,9 @@ const B = "#0072BC", BL = "#0088DD", BD = "#005A96", BBG = "#003A5C", BDP = "#00
 
 // Types
 type Product = { id: string; name: string; subtitle: string; retail: number; img: string; badge: string | null; cat: string; color: string; sort_order: number };
-type Customer = { id: string; user_id: string; name: string; email: string; phone?: string; address?: string; business: string; city: string; type: string; status: string; total_orders: number; total_spent: number; last_order_at: string | null; created_at: string };
+type Customer = { id: string; user_id: string; name: string; email: string; phone?: string; address?: string; business: string; city: string; type: string; status: string; total_orders: number; total_spent: number; last_order_at: string | null; created_at: string; qb_customer_id?: string | null };
 type Application = { id: string; name: string; email: string; business: string; city: string; phone: string; type: string; status: string; created_at: string; address?: string };
-type Order = { id: string; order_number: string; customer_id: string; customer_name: string; customer_email: string; items: OrderItem[]; subtotal: number; tier_name: string; tier_discount: number; discount_amount: number; cc_fee: number; total: number; pay_method: string; notes: string; status: string; created_at: string };
+type Order = { id: string; order_number: string; customer_id: string; customer_name: string; customer_email: string; items: OrderItem[]; subtotal: number; tier_name: string; tier_discount: number; discount_amount: number; cc_fee: number; total: number; pay_method: string; notes: string; status: string; created_at: string; qb_invoice_id?: string | null };
 type OrderItem = { product_id: string; name: string; qty: number; unit_price: number; line_total: number };
 
 function getTier(s: number) {
@@ -63,6 +63,11 @@ export default function App() {
   const [appForm, setAppForm] = useState({ name: "", email: "", phone: "", business: "", address: "", city: "", state: "", zip: "", type: "Chiropractor" });
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
 
+  // QuickBooks state
+  const [qbConnected, setQbConnected] = useState(false);
+  const [qbLoading, setQbLoading] = useState<string | null>(null);
+  const [qbMessage, setQbMessage] = useState<{ text: string; ok: boolean } | null>(null);
+
   // Auth listener
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
@@ -83,6 +88,21 @@ export default function App() {
     supabase.from("products").select("*").eq("active", true).order("sort_order").then(({ data }) => {
       if (data) setProducts(data as Product[]);
     });
+  }, []);
+
+  // QuickBooks connection check
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("qb_connected") === "true") {
+      setQbConnected(true);
+      setQbMessage({ text: "QuickBooks connected successfully!", ok: true });
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+    if (params.get("qb_error")) {
+      setQbMessage({ text: `QuickBooks connection failed: ${params.get("qb_error")}`, ok: false });
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+    fetch("/api/qb/status").then(r => r.json()).then(d => setQbConnected(d.connected)).catch(() => {});
   }, []);
 
   const loadUserData = async (s: any) => {
@@ -250,9 +270,63 @@ export default function App() {
     setOrders(p => p.map(o => o.id === id ? { ...o, status } : o));
   };
 
+  // QuickBooks functions
+  const syncCustomerToQB = async (customerId: string) => {
+    setQbLoading(`cust-${customerId}`);
+    setQbMessage(null);
+    try {
+      const res = await fetch("/api/qb/sync-customer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customerId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setQbMessage({ text: `✓ ${data.message}`, ok: true });
+        setCustomers(prev => prev.map(c => c.id === customerId ? { ...c, qb_customer_id: data.qb_customer_id } : c));
+        if (selectedCustomer?.id === customerId) {
+          setSelectedCustomer(prev => prev ? { ...prev, qb_customer_id: data.qb_customer_id } : prev);
+        }
+      } else {
+        setQbMessage({ text: `Error: ${data.error}`, ok: false });
+      }
+    } catch {
+      setQbMessage({ text: "Failed to connect to QuickBooks", ok: false });
+    }
+    setQbLoading(null);
+  };
+
+  const createQBInvoice = async (orderId: string) => {
+    setQbLoading(`ord-${orderId}`);
+    setQbMessage(null);
+    try {
+      const res = await fetch("/api/qb/create-invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setQbMessage({ text: `✓ ${data.message} (Invoice #${data.qb_doc_number || data.qb_invoice_id})`, ok: true });
+        setOrders(prev => prev.map(o => o.id === orderId ? { ...o, qb_invoice_id: data.qb_invoice_id } : o));
+      } else {
+        setQbMessage({ text: `Error: ${data.error}`, ok: false });
+      }
+    } catch {
+      setQbMessage({ text: "Failed to create invoice", ok: false });
+    }
+    setQbLoading(null);
+  };
+
+  const disconnectQB = async () => {
+    if (!confirm("Disconnect QuickBooks? You can reconnect anytime.")) return;
+    await fetch("/api/qb/disconnect", { method: "POST" });
+    setQbConnected(false);
+    setQbMessage({ text: "QuickBooks disconnected", ok: true });
+  };
+
   // Export customers to CSV
   const exportCustomersCSV = () => {
-    // Try to enrich customer data with application info (phone, address)
     const enriched = customers.map(c => {
       const app = applications.find(a => a.email === c.email);
       return {
@@ -428,6 +502,56 @@ export default function App() {
             ))}
           </div>
 
+          {/* QuickBooks Connection Banner */}
+          <div style={{
+            background: qbConnected ? "rgba(0,184,148,.08)" : "rgba(255,255,255,.04)",
+            border: `1px solid ${qbConnected ? "rgba(0,184,148,.25)" : "rgba(0,114,188,.2)"}`,
+            borderRadius: 12,
+            padding: "12px 18px",
+            marginBottom: 16,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 10,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 18 }}>📗</span>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: qbConnected ? "#00B894" : "rgba(255,255,255,.6)" }}>
+                  QuickBooks {qbConnected ? "Connected" : "Not Connected"}
+                </div>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,.35)" }}>
+                  {qbConnected ? "Sync customers & create invoices with one click" : "Connect to push customers & invoices to QBO"}
+                </div>
+              </div>
+            </div>
+            {qbConnected ? (
+              <button onClick={disconnectQB} style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid rgba(255,80,80,.3)", background: "rgba(255,80,80,.08)", color: "#FF6B6B", fontSize: 12, fontWeight: 500, cursor: "pointer" }}>Disconnect</button>
+            ) : (
+              <a href="/api/qb/connect" style={{ padding: "8px 18px", borderRadius: 8, background: "linear-gradient(135deg, #2CA01C, #48BB78)", color: "white", fontSize: 12, fontWeight: 600, textDecoration: "none", cursor: "pointer" }}>Connect QuickBooks</a>
+            )}
+          </div>
+
+          {/* QB Message Toast */}
+          {qbMessage && (
+            <div style={{
+              background: qbMessage.ok ? "rgba(0,184,148,.1)" : "rgba(255,80,80,.1)",
+              border: `1px solid ${qbMessage.ok ? "rgba(0,184,148,.3)" : "rgba(255,80,80,.3)"}`,
+              borderRadius: 8,
+              padding: "10px 14px",
+              marginBottom: 12,
+              fontSize: 13,
+              color: qbMessage.ok ? "#00B894" : "#FF6B6B",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}>
+              <span>{qbMessage.text}</span>
+              <button onClick={() => setQbMessage(null)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: 16 }}>×</button>
+            </div>
+          )}
+
           {/* Tabs */}
           <div style={{ display: "flex", gap: 4, marginBottom: 24, background: "rgba(255,255,255,.03)", borderRadius: 12, padding: 4 }}>
             {["customers", "applicants", "orders"].map(t => (
@@ -449,17 +573,37 @@ export default function App() {
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {customers.length === 0 && <div style={{ textAlign: "center", padding: 40, color: "rgba(255,255,255,.4)" }}>No customers yet</div>}
                 {customers.map((c, i) => (
-                  <div key={c.id} onClick={() => setSelectedCustomer(c)} style={{ background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 14, padding: "18px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", transition: "all .2s", animation: `su .4s ease ${i * .05}s both` }} onMouseOver={(e: React.MouseEvent<HTMLDivElement>) => (e.currentTarget.style.borderColor = `${B}55`)} onMouseOut={(e: React.MouseEvent<HTMLDivElement>) => (e.currentTarget.style.borderColor = `${B}22`)}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                  <div key={c.id} style={{ background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 14, padding: "18px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", transition: "all .2s", animation: `su .4s ease ${i * .05}s both` }} onMouseOver={(e: React.MouseEvent<HTMLDivElement>) => (e.currentTarget.style.borderColor = `${B}55`)} onMouseOut={(e: React.MouseEvent<HTMLDivElement>) => (e.currentTarget.style.borderColor = `${B}22`)}>
+                    <div onClick={() => setSelectedCustomer(c)} style={{ display: "flex", alignItems: "center", gap: 16, flex: 1 }}>
                       <div style={{ width: 44, height: 44, borderRadius: 12, background: `${B}22`, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 16, color: BL }}>{c.name.split(" ").map(n => n[0]).join("").slice(0, 2)}</div>
                       <div>
                         <div style={{ fontWeight: 700, fontSize: 15 }}>{c.name}</div>
                         <div style={{ fontSize: 12, color: "rgba(255,255,255,.45)" }}>{c.business} · {c.city}</div>
                       </div>
                     </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontWeight: 700, fontSize: 16, color: BL }}>${c.total_spent.toLocaleString()}</div>
-                      <div style={{ fontSize: 11, color: "rgba(255,255,255,.35)" }}>{c.total_orders} orders</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      {qbConnected && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); syncCustomerToQB(c.id); }}
+                          disabled={!!c.qb_customer_id || qbLoading === `cust-${c.id}`}
+                          style={{
+                            padding: "4px 10px", borderRadius: 6,
+                            border: c.qb_customer_id ? "1px solid rgba(0,184,148,.3)" : `1px solid ${B}44`,
+                            background: c.qb_customer_id ? "rgba(0,184,148,.1)" : `${B}15`,
+                            color: c.qb_customer_id ? "#00B894" : BL,
+                            fontSize: 11, fontWeight: 600,
+                            cursor: c.qb_customer_id ? "default" : "pointer",
+                            opacity: qbLoading === `cust-${c.id}` ? 0.5 : 1,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {qbLoading === `cust-${c.id}` ? "Syncing..." : c.qb_customer_id ? "✓ In QB" : "→ QB"}
+                        </button>
+                      )}
+                      <div onClick={() => setSelectedCustomer(c)} style={{ textAlign: "right" }}>
+                        <div style={{ fontWeight: 700, fontSize: 16, color: BL }}>${c.total_spent.toLocaleString()}</div>
+                        <div style={{ fontSize: 11, color: "rgba(255,255,255,.35)" }}>{c.total_orders} orders</div>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -467,7 +611,7 @@ export default function App() {
             </div>
           )}
 
-          {/* CUSTOMER DETAIL (Enhanced with all contact info) */}
+          {/* CUSTOMER DETAIL */}
           {adminTab === "customers" && selectedCustomer && (() => {
             const app = applications.find(a => a.email === selectedCustomer.email);
             const custPhone = selectedCustomer.phone || app?.phone || "—";
@@ -486,7 +630,27 @@ export default function App() {
                       <div style={{ fontSize: 22, fontWeight: 800 }}>{selectedCustomer.name}</div>
                       <div style={{ fontSize: 14, color: "rgba(255,255,255,.5)" }}>{selectedCustomer.business}</div>
                     </div>
-                    <div style={{ padding: "6px 14px", borderRadius: 8, background: selectedCustomer.status === "active" ? `${GR}22` : "rgba(255,160,64,.15)", color: selectedCustomer.status === "active" ? GR : "#FFA940", fontSize: 12, fontWeight: 600, textTransform: "capitalize" }}>{selectedCustomer.status}</div>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      {qbConnected && (
+                        <button
+                          onClick={() => syncCustomerToQB(selectedCustomer.id)}
+                          disabled={!!selectedCustomer.qb_customer_id || qbLoading === `cust-${selectedCustomer.id}`}
+                          className="bh"
+                          style={{
+                            padding: "8px 16px", borderRadius: 8,
+                            border: selectedCustomer.qb_customer_id ? "1px solid rgba(0,184,148,.3)" : `1px solid ${B}44`,
+                            background: selectedCustomer.qb_customer_id ? "rgba(0,184,148,.1)" : `${B}15`,
+                            color: selectedCustomer.qb_customer_id ? "#00B894" : BL,
+                            fontSize: 12, fontWeight: 600,
+                            cursor: selectedCustomer.qb_customer_id ? "default" : "pointer",
+                            opacity: qbLoading === `cust-${selectedCustomer.id}` ? 0.5 : 1,
+                          }}
+                        >
+                          {qbLoading === `cust-${selectedCustomer.id}` ? "Syncing..." : selectedCustomer.qb_customer_id ? "✓ Synced to QuickBooks" : "📗 Send to QuickBooks"}
+                        </button>
+                      )}
+                      <div style={{ padding: "6px 14px", borderRadius: 8, background: selectedCustomer.status === "active" ? `${GR}22` : "rgba(255,160,64,.15)", color: selectedCustomer.status === "active" ? GR : "#FFA940", fontSize: 12, fontWeight: 600, textTransform: "capitalize" }}>{selectedCustomer.status}</div>
+                    </div>
                   </div>
 
                   {/* Contact Info Grid */}
@@ -536,6 +700,24 @@ export default function App() {
                           <div style={{ fontSize: 12, color: "rgba(255,255,255,.4)" }}>{new Date(o.created_at).toLocaleDateString()} · {o.items.reduce((s: number, i: OrderItem) => s + i.qty, 0)} items · {o.pay_method === "card" ? "💳 Card" : "📄 Check"}</div>
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                          {qbConnected && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); createQBInvoice(o.id); }}
+                              disabled={!!o.qb_invoice_id || qbLoading === `ord-${o.id}`}
+                              style={{
+                                padding: "4px 10px", borderRadius: 6,
+                                border: o.qb_invoice_id ? "1px solid rgba(0,184,148,.3)" : "1px solid rgba(72,187,120,.3)",
+                                background: o.qb_invoice_id ? "rgba(0,184,148,.1)" : "rgba(72,187,120,.1)",
+                                color: o.qb_invoice_id ? "#00B894" : "#48BB78",
+                                fontSize: 11, fontWeight: 600,
+                                cursor: o.qb_invoice_id ? "default" : "pointer",
+                                opacity: qbLoading === `ord-${o.id}` ? 0.5 : 1,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {qbLoading === `ord-${o.id}` ? "Creating..." : o.qb_invoice_id ? "✓ Invoiced" : "📗 Invoice"}
+                            </button>
+                          )}
                           <div style={{ textAlign: "right" }}>
                             <div style={{ fontWeight: 700, color: BL }}>${o.total.toFixed(2)}</div>
                             <div style={{ fontSize: 11, color: o.status === "shipped" ? "#FFA940" : o.status === "pending" ? "rgba(255,255,255,.5)" : GR, textTransform: "capitalize" }}>{o.status}</div>
@@ -543,7 +725,6 @@ export default function App() {
                           <span style={{ fontSize: 12, color: "rgba(255,255,255,.3)", transition: "transform .2s", transform: expandedOrder === o.id ? "rotate(180deg)" : "rotate(0)" }}>▼</span>
                         </div>
                       </div>
-                      {/* Expanded order items */}
                       {expandedOrder === o.id && (
                         <div style={{ background: "rgba(255,255,255,.02)", border: `1px solid ${B}55`, borderTop: "none", borderRadius: "0 0 12px 12px", padding: "16px 20px", animation: "su .25s ease" }}>
                           <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -607,7 +788,7 @@ export default function App() {
             </div>
           )}
 
-          {/* ORDERS TAB (with expandable line items) */}
+          {/* ORDERS TAB */}
           {adminTab === "orders" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {orders.length === 0 && <div style={{ textAlign: "center", padding: 40, color: "rgba(255,255,255,.4)" }}>No orders yet</div>}
@@ -620,6 +801,24 @@ export default function App() {
                       {o.notes && <div style={{ fontSize: 12, color: "rgba(255,255,255,.3)", marginTop: 2 }}>Note: {o.notes}</div>}
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      {qbConnected && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); createQBInvoice(o.id); }}
+                          disabled={!!o.qb_invoice_id || qbLoading === `ord-${o.id}`}
+                          style={{
+                            padding: "4px 10px", borderRadius: 6,
+                            border: o.qb_invoice_id ? "1px solid rgba(0,184,148,.3)" : "1px solid rgba(72,187,120,.3)",
+                            background: o.qb_invoice_id ? "rgba(0,184,148,.1)" : "rgba(72,187,120,.1)",
+                            color: o.qb_invoice_id ? "#00B894" : "#48BB78",
+                            fontSize: 11, fontWeight: 600,
+                            cursor: o.qb_invoice_id ? "default" : "pointer",
+                            opacity: qbLoading === `ord-${o.id}` ? 0.5 : 1,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {qbLoading === `ord-${o.id}` ? "Creating..." : o.qb_invoice_id ? "✓ Invoiced" : "📗 Invoice"}
+                        </button>
+                      )}
                       <select
                         value={o.status}
                         onClick={(e: React.MouseEvent) => e.stopPropagation()}
@@ -640,7 +839,6 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Expanded order line items */}
                   {expandedOrder === o.id && (
                     <div style={{ background: "rgba(255,255,255,.02)", border: `1px solid ${B}55`, borderTop: "none", borderRadius: "0 0 14px 14px", padding: "18px 24px", animation: "su .25s ease" }}>
                       <table style={{ width: "100%", borderCollapse: "collapse" }}>
