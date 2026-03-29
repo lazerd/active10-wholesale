@@ -47,6 +47,7 @@ export async function POST(req: NextRequest) {
     const address = customer.address || app?.address || "";
     const displayName = customer.name || customer.email;
 
+    // Search QB by email first
     try {
       const query = await qbApi(
         tokens.realm_id,
@@ -55,55 +56,65 @@ export async function POST(req: NextRequest) {
           `SELECT * FROM Customer WHERE PrimaryEmailAddr = '${customer.email}'`
         )}`
       );
-
       if (query?.QueryResponse?.Customer?.length > 0) {
         const qbCust = query.QueryResponse.Customer[0];
-        await supabase
-          .from("customers")
-          .update({ qb_customer_id: qbCust.Id })
-          .eq("id", customerId);
-
+        await supabase.from("customers").update({ qb_customer_id: qbCust.Id }).eq("id", customerId);
         return NextResponse.json({
           success: true,
           qb_customer_id: qbCust.Id,
-          message: "Matched existing QuickBooks customer",
+          message: "Matched existing QuickBooks customer by email",
         });
       }
     } catch {
-      // Query failed, proceed to create
+      // Query failed, continue
     }
 
+    // Search QB by display name
+    try {
+      const nameQuery = await qbApi(
+        tokens.realm_id,
+        tokens.access_token,
+        `query?query=${encodeURIComponent(
+          `SELECT * FROM Customer WHERE DisplayName = '${displayName.replace(/'/g, "\\'")}'`
+        )}`
+      );
+      if (nameQuery?.QueryResponse?.Customer?.length > 0) {
+        const qbCust = nameQuery.QueryResponse.Customer[0];
+        await supabase.from("customers").update({ qb_customer_id: qbCust.Id }).eq("id", customerId);
+        return NextResponse.json({
+          success: true,
+          qb_customer_id: qbCust.Id,
+          message: "Matched existing QuickBooks customer by name",
+        });
+      }
+    } catch {
+      // Query failed, continue to create
+    }
+
+    // Try to create — if duplicate name error, append email to make unique
     const qbCustomerData: Record<string, unknown> = {
       DisplayName: displayName,
       PrimaryEmailAddr: { Address: customer.email },
       CompanyName: customer.business || "",
     };
+    if (phone) qbCustomerData.PrimaryPhone = { FreeFormNumber: phone };
+    if (address) qbCustomerData.BillAddr = { Line1: address, City: customer.city || "" };
 
-    if (phone) {
-      qbCustomerData.PrimaryPhone = { FreeFormNumber: phone };
+    let result;
+    try {
+      result = await qbApi(tokens.realm_id, tokens.access_token, "customer", "POST", qbCustomerData);
+    } catch (createErr: any) {
+      // If duplicate name error, retry with email appended
+      if (createErr.message && createErr.message.includes("6240")) {
+        qbCustomerData.DisplayName = `${displayName} (${customer.email})`;
+        result = await qbApi(tokens.realm_id, tokens.access_token, "customer", "POST", qbCustomerData);
+      } else {
+        throw createErr;
+      }
     }
-
-    if (address) {
-      qbCustomerData.BillAddr = {
-        Line1: address,
-        City: customer.city || "",
-      };
-    }
-
-    const result = await qbApi(
-      tokens.realm_id,
-      tokens.access_token,
-      "customer",
-      "POST",
-      qbCustomerData
-    );
 
     const qbCustomerId = result.Customer.Id;
-
-    await supabase
-      .from("customers")
-      .update({ qb_customer_id: qbCustomerId })
-      .eq("id", customerId);
+    await supabase.from("customers").update({ qb_customer_id: qbCustomerId }).eq("id", customerId);
 
     return NextResponse.json({
       success: true,
