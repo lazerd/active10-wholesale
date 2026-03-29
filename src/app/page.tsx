@@ -6,8 +6,8 @@ const B = "#0072BC", BL = "#0088DD", BD = "#005A96", BBG = "#003A5C", BDP = "#00
 
 // Types
 type Product = { id: string; name: string; subtitle: string; retail: number; img: string; badge: string | null; cat: string; color: string; sort_order: number };
-type Customer = { id: string; user_id: string; name: string; email: string; business: string; city: string; type: string; status: string; total_orders: number; total_spent: number; last_order_at: string | null; created_at: string };
-type Application = { id: string; name: string; email: string; business: string; city: string; phone: string; type: string; status: string; created_at: string };
+type Customer = { id: string; user_id: string; name: string; email: string; phone?: string; address?: string; business: string; city: string; type: string; status: string; total_orders: number; total_spent: number; last_order_at: string | null; created_at: string };
+type Application = { id: string; name: string; email: string; business: string; city: string; phone: string; type: string; status: string; created_at: string; address?: string };
 type Order = { id: string; order_number: string; customer_id: string; customer_name: string; customer_email: string; items: OrderItem[]; subtotal: number; tier_name: string; tier_discount: number; discount_amount: number; cc_fee: number; total: number; pay_method: string; notes: string; status: string; created_at: string };
 type OrderItem = { product_id: string; name: string; qty: number; unit_price: number; line_total: number };
 
@@ -61,6 +61,7 @@ export default function App() {
   const [resetEmail, setResetEmail] = useState("");
   const [resetMsg, setResetMsg] = useState("");
   const [appForm, setAppForm] = useState({ name: "", email: "", phone: "", business: "", address: "", city: "", state: "", zip: "", type: "Chiropractor" });
+  const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
 
   // Auth listener
   useEffect(() => {
@@ -244,11 +245,53 @@ export default function App() {
       alert("Error: " + (data.error || "Failed to reject"));
     }
   };
-const updateOrderStatus = async (id: string, status: string) => {
+  const updateOrderStatus = async (id: string, status: string) => {
     await supabase.from("orders").update({ status }).eq("id", id);
     setOrders(p => p.map(o => o.id === id ? { ...o, status } : o));
   };
-  
+
+  // Export customers to CSV
+  const exportCustomersCSV = () => {
+    // Try to enrich customer data with application info (phone, address)
+    const enriched = customers.map(c => {
+      const app = applications.find(a => a.email === c.email);
+      return {
+        Name: c.name,
+        Email: c.email,
+        Phone: c.phone || app?.phone || "",
+        Business: c.business,
+        Address: c.address || app?.address || "",
+        City: c.city,
+        Type: c.type,
+        Status: c.status,
+        "Total Orders": c.total_orders,
+        "Total Spent": `$${c.total_spent.toFixed(2)}`,
+        "Last Order": c.last_order_at ? new Date(c.last_order_at).toLocaleDateString() : "Never",
+        "Member Since": new Date(c.created_at).toLocaleDateString(),
+      };
+    });
+
+    if (enriched.length === 0) return;
+
+    const headers = Object.keys(enriched[0]);
+    const csvRows = [
+      headers.join(","),
+      ...enriched.map(row =>
+        headers.map(h => {
+          const val = String((row as any)[h]).replace(/"/g, '""');
+          return val.includes(",") || val.includes('"') || val.includes("\n") ? `"${val}"` : val;
+        }).join(",")
+      ),
+    ];
+    const blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `active10-customers-${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const filtered = filter === "all" ? products : products.filter(p => p.cat === filter);
   const bg: React.CSSProperties = { minHeight: "100vh", background: `linear-gradient(165deg, ${BDP} 0%, ${BBG} 40%, ${BD} 100%)`, fontFamily: "'DM Sans', sans-serif", color: "white" };
   const fonts = <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,500;9..40,700&family=Playfair+Display:wght@600;800&display=swap" rel="stylesheet" />;
@@ -388,7 +431,7 @@ const updateOrderStatus = async (id: string, status: string) => {
           {/* Tabs */}
           <div style={{ display: "flex", gap: 4, marginBottom: 24, background: "rgba(255,255,255,.03)", borderRadius: 12, padding: 4 }}>
             {["customers", "applicants", "orders"].map(t => (
-              <button key={t} onClick={() => { setAdminTab(t); setSelectedCustomer(null); }} style={{ flex: 1, padding: "10px 16px", borderRadius: 10, border: "none", background: adminTab === t ? `${B}33` : "transparent", color: adminTab === t ? "white" : "rgba(255,255,255,.5)", fontWeight: 600, fontSize: 13, cursor: "pointer", textTransform: "capitalize", transition: "all .2s" }}>
+              <button key={t} onClick={() => { setAdminTab(t); setSelectedCustomer(null); setExpandedOrder(null); }} style={{ flex: 1, padding: "10px 16px", borderRadius: 10, border: "none", background: adminTab === t ? `${B}33` : "transparent", color: adminTab === t ? "white" : "rgba(255,255,255,.5)", fontWeight: 600, fontSize: 13, cursor: "pointer", textTransform: "capitalize", transition: "all .2s" }}>
                 {t}{t === "applicants" && pending.length > 0 ? ` (${pending.length})` : ""}
               </button>
             ))}
@@ -396,61 +439,149 @@ const updateOrderStatus = async (id: string, status: string) => {
 
           {/* CUSTOMERS TAB */}
           {adminTab === "customers" && !selectedCustomer && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {customers.length === 0 && <div style={{ textAlign: "center", padding: 40, color: "rgba(255,255,255,.4)" }}>No customers yet</div>}
-              {customers.map((c, i) => (
-                <div key={c.id} onClick={() => setSelectedCustomer(c)} style={{ background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 14, padding: "18px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", transition: "all .2s", animation: `su .4s ease ${i * .05}s both` }} onMouseOver={(e: React.MouseEvent<HTMLDivElement>) => (e.currentTarget.style.borderColor = `${B}55`)} onMouseOut={(e: React.MouseEvent<HTMLDivElement>) => (e.currentTarget.style.borderColor = `${B}22`)}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                    <div style={{ width: 44, height: 44, borderRadius: 12, background: `${B}22`, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 16, color: BL }}>{c.name.split(" ").map(n => n[0]).join("").slice(0, 2)}</div>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: 15 }}>{c.name}</div>
-                      <div style={{ fontSize: 12, color: "rgba(255,255,255,.45)" }}>{c.business} · {c.city}</div>
+            <div>
+              {/* Export button */}
+              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
+                <button onClick={exportCustomersCSV} className="bh" style={{ padding: "8px 18px", background: "rgba(255,255,255,.06)", border: `1px solid ${B}33`, borderRadius: 8, color: "rgba(255,255,255,.6)", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 15 }}>📥</span> Export Customers (CSV)
+                </button>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {customers.length === 0 && <div style={{ textAlign: "center", padding: 40, color: "rgba(255,255,255,.4)" }}>No customers yet</div>}
+                {customers.map((c, i) => (
+                  <div key={c.id} onClick={() => setSelectedCustomer(c)} style={{ background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 14, padding: "18px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", transition: "all .2s", animation: `su .4s ease ${i * .05}s both` }} onMouseOver={(e: React.MouseEvent<HTMLDivElement>) => (e.currentTarget.style.borderColor = `${B}55`)} onMouseOut={(e: React.MouseEvent<HTMLDivElement>) => (e.currentTarget.style.borderColor = `${B}22`)}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                      <div style={{ width: 44, height: 44, borderRadius: 12, background: `${B}22`, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 16, color: BL }}>{c.name.split(" ").map(n => n[0]).join("").slice(0, 2)}</div>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 15 }}>{c.name}</div>
+                        <div style={{ fontSize: 12, color: "rgba(255,255,255,.45)" }}>{c.business} · {c.city}</div>
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontWeight: 700, fontSize: 16, color: BL }}>${c.total_spent.toLocaleString()}</div>
+                      <div style={{ fontSize: 11, color: "rgba(255,255,255,.35)" }}>{c.total_orders} orders</div>
                     </div>
                   </div>
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontWeight: 700, fontSize: 16, color: BL }}>${c.total_spent.toLocaleString()}</div>
-                    <div style={{ fontSize: 11, color: "rgba(255,255,255,.35)" }}>{c.total_orders} orders</div>
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           )}
 
-          {/* CUSTOMER DETAIL */}
-          {adminTab === "customers" && selectedCustomer && (
-            <div style={{ animation: "su .4s ease" }}>
-              <button onClick={() => setSelectedCustomer(null)} style={{ padding: "8px 16px", background: "rgba(255,255,255,.06)", border: `1px solid ${B}33`, borderRadius: 8, color: "rgba(255,255,255,.6)", fontSize: 13, cursor: "pointer", marginBottom: 20 }}>← Back to Customers</button>
-              <div style={{ background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 18, padding: 28, marginBottom: 20 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 20, marginBottom: 24 }}>
-                  <div style={{ width: 64, height: 64, borderRadius: 16, background: `${B}22`, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 24, color: BL }}>{selectedCustomer.name.split(" ").map(n => n[0]).join("").slice(0, 2)}</div>
-                  <div>
-                    <div style={{ fontSize: 22, fontWeight: 800 }}>{selectedCustomer.name}</div>
-                    <div style={{ fontSize: 14, color: "rgba(255,255,255,.5)" }}>{selectedCustomer.business}</div>
-                    <div style={{ fontSize: 13, color: "rgba(255,255,255,.35)", marginTop: 2 }}>{selectedCustomer.email} · {selectedCustomer.city}</div>
+          {/* CUSTOMER DETAIL (Enhanced with all contact info) */}
+          {adminTab === "customers" && selectedCustomer && (() => {
+            const app = applications.find(a => a.email === selectedCustomer.email);
+            const custPhone = selectedCustomer.phone || app?.phone || "—";
+            const custAddress = selectedCustomer.address || app?.address || "";
+            const custOrders = orders.filter(o => o.customer_id === selectedCustomer.id);
+
+            return (
+              <div style={{ animation: "su .4s ease" }}>
+                <button onClick={() => setSelectedCustomer(null)} style={{ padding: "8px 16px", background: "rgba(255,255,255,.06)", border: `1px solid ${B}33`, borderRadius: 8, color: "rgba(255,255,255,.6)", fontSize: 13, cursor: "pointer", marginBottom: 20 }}>← Back to Customers</button>
+
+                {/* Profile Card */}
+                <div style={{ background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 18, padding: 28, marginBottom: 20 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 20, marginBottom: 24, flexWrap: "wrap" }}>
+                    <div style={{ width: 64, height: 64, borderRadius: 16, background: `${B}22`, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 24, color: BL }}>{selectedCustomer.name.split(" ").map(n => n[0]).join("").slice(0, 2)}</div>
+                    <div style={{ flex: 1, minWidth: 200 }}>
+                      <div style={{ fontSize: 22, fontWeight: 800 }}>{selectedCustomer.name}</div>
+                      <div style={{ fontSize: 14, color: "rgba(255,255,255,.5)" }}>{selectedCustomer.business}</div>
+                    </div>
+                    <div style={{ padding: "6px 14px", borderRadius: 8, background: selectedCustomer.status === "active" ? `${GR}22` : "rgba(255,160,64,.15)", color: selectedCustomer.status === "active" ? GR : "#FFA940", fontSize: 12, fontWeight: 600, textTransform: "capitalize" }}>{selectedCustomer.status}</div>
                   </div>
-                  <div style={{ marginLeft: "auto", padding: "6px 14px", borderRadius: 8, background: selectedCustomer.status === "active" ? `${GR}22` : "rgba(255,160,64,.15)", color: selectedCustomer.status === "active" ? GR : "#FFA940", fontSize: 12, fontWeight: 600, textTransform: "capitalize" }}>{selectedCustomer.status}</div>
+
+                  {/* Contact Info Grid */}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 14, marginBottom: 20 }}>
+                    <div style={{ background: "rgba(255,255,255,.03)", borderRadius: 12, padding: "14px 16px" }}>
+                      <div style={{ fontSize: 11, color: "rgba(255,255,255,.35)", textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 6 }}>📧 Email</div>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: BL, wordBreak: "break-all" }}>{selectedCustomer.email}</div>
+                    </div>
+                    <div style={{ background: "rgba(255,255,255,.03)", borderRadius: 12, padding: "14px 16px" }}>
+                      <div style={{ fontSize: 11, color: "rgba(255,255,255,.35)", textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 6 }}>📱 Phone</div>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,.8)" }}>{custPhone}</div>
+                    </div>
+                    <div style={{ background: "rgba(255,255,255,.03)", borderRadius: 12, padding: "14px 16px" }}>
+                      <div style={{ fontSize: 11, color: "rgba(255,255,255,.35)", textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 6 }}>📍 Address</div>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,.8)" }}>{custAddress ? `${custAddress}, ${selectedCustomer.city}` : selectedCustomer.city}</div>
+                    </div>
+                    <div style={{ background: "rgba(255,255,255,.03)", borderRadius: 12, padding: "14px 16px" }}>
+                      <div style={{ fontSize: 11, color: "rgba(255,255,255,.35)", textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 6 }}>🏥 Type</div>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,.8)" }}>{selectedCustomer.type}</div>
+                    </div>
+                  </div>
+
+                  {/* Stats Row */}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 14 }}>
+                    {[
+                      { l: "Total Spent", v: `$${selectedCustomer.total_spent.toLocaleString()}`, c: "#E8C76A" },
+                      { l: "Total Orders", v: selectedCustomer.total_orders, c: BL },
+                      { l: "Member Since", v: new Date(selectedCustomer.created_at).toLocaleDateString(), c: "rgba(255,255,255,.7)" },
+                      { l: "Last Order", v: selectedCustomer.last_order_at ? new Date(selectedCustomer.last_order_at).toLocaleDateString() : "Never", c: GR },
+                    ].map((s, i) => (
+                      <div key={i} style={{ background: "rgba(255,255,255,.03)", borderRadius: 12, padding: "14px 16px" }}>
+                        <div style={{ fontSize: 11, color: "rgba(255,255,255,.35)", textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 4 }}>{s.l}</div>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: s.c }}>{s.v}</div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 14 }}>
-                  {[{ l: "Total Spent", v: `$${selectedCustomer.total_spent.toLocaleString()}`, c: "#E8C76A" }, { l: "Total Orders", v: selectedCustomer.total_orders, c: BL }, { l: "Member Since", v: new Date(selectedCustomer.created_at).toLocaleDateString(), c: "rgba(255,255,255,.7)" }, { l: "Type", v: selectedCustomer.type, c: GR }].map((s, i) => (
-                    <div key={i} style={{ background: "rgba(255,255,255,.03)", borderRadius: 12, padding: "14px 16px" }}>
-                      <div style={{ fontSize: 11, color: "rgba(255,255,255,.35)", textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 4 }}>{s.l}</div>
-                      <div style={{ fontSize: 18, fontWeight: 700, color: s.c }}>{s.v}</div>
+
+                {/* Order History with expandable detail */}
+                <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>Order History ({custOrders.length})</h3>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {custOrders.map(o => (
+                    <div key={o.id}>
+                      <div onClick={() => setExpandedOrder(expandedOrder === o.id ? null : o.id)} style={{ background: "rgba(255,255,255,.03)", border: `1px solid ${expandedOrder === o.id ? `${B}55` : `${B}22`}`, borderRadius: expandedOrder === o.id ? "12px 12px 0 0" : 12, padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", transition: "all .2s" }}>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 14 }}>{o.order_number}</div>
+                          <div style={{ fontSize: 12, color: "rgba(255,255,255,.4)" }}>{new Date(o.created_at).toLocaleDateString()} · {o.items.reduce((s: number, i: OrderItem) => s + i.qty, 0)} items · {o.pay_method === "card" ? "💳 Card" : "📄 Check"}</div>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                          <div style={{ textAlign: "right" }}>
+                            <div style={{ fontWeight: 700, color: BL }}>${o.total.toFixed(2)}</div>
+                            <div style={{ fontSize: 11, color: o.status === "shipped" ? "#FFA940" : o.status === "pending" ? "rgba(255,255,255,.5)" : GR, textTransform: "capitalize" }}>{o.status}</div>
+                          </div>
+                          <span style={{ fontSize: 12, color: "rgba(255,255,255,.3)", transition: "transform .2s", transform: expandedOrder === o.id ? "rotate(180deg)" : "rotate(0)" }}>▼</span>
+                        </div>
+                      </div>
+                      {/* Expanded order items */}
+                      {expandedOrder === o.id && (
+                        <div style={{ background: "rgba(255,255,255,.02)", border: `1px solid ${B}55`, borderTop: "none", borderRadius: "0 0 12px 12px", padding: "16px 20px", animation: "su .25s ease" }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                            <thead>
+                              <tr style={{ borderBottom: `1px solid ${B}22` }}>
+                                <th style={{ textAlign: "left", padding: "8px 0", fontSize: 11, color: "rgba(255,255,255,.4)", textTransform: "uppercase", letterSpacing: ".5px", fontWeight: 600 }}>Product</th>
+                                <th style={{ textAlign: "center", padding: "8px 0", fontSize: 11, color: "rgba(255,255,255,.4)", textTransform: "uppercase", letterSpacing: ".5px", fontWeight: 600 }}>Qty</th>
+                                <th style={{ textAlign: "right", padding: "8px 0", fontSize: 11, color: "rgba(255,255,255,.4)", textTransform: "uppercase", letterSpacing: ".5px", fontWeight: 600 }}>Unit Price</th>
+                                <th style={{ textAlign: "right", padding: "8px 0", fontSize: 11, color: "rgba(255,255,255,.4)", textTransform: "uppercase", letterSpacing: ".5px", fontWeight: 600 }}>Line Total</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {o.items.map((item: OrderItem, idx: number) => (
+                                <tr key={idx} style={{ borderBottom: `1px solid ${B}11` }}>
+                                  <td style={{ padding: "10px 0", fontSize: 14, fontWeight: 500 }}>{item.name}</td>
+                                  <td style={{ padding: "10px 0", fontSize: 14, textAlign: "center", color: "rgba(255,255,255,.7)" }}>{item.qty}</td>
+                                  <td style={{ padding: "10px 0", fontSize: 14, textAlign: "right", color: "rgba(255,255,255,.7)" }}>${item.unit_price.toFixed(2)}</td>
+                                  <td style={{ padding: "10px 0", fontSize: 14, textAlign: "right", fontWeight: 600, color: BL }}>${item.line_total.toFixed(2)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${B}22`, display: "flex", flexDirection: "column", gap: 6 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: "rgba(255,255,255,.4)" }}>Subtotal</span><span>${o.subtotal.toFixed(2)}</span></div>
+                            {o.discount_amount > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: GR }}>{o.tier_name} Discount ({(o.tier_discount * 100).toFixed(0)}%)</span><span style={{ color: GR }}>-${o.discount_amount.toFixed(2)}</span></div>}
+                            {o.cc_fee > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: "#FFA940" }}>CC Fee (2.99%)</span><span style={{ color: "#FFA940" }}>+${o.cc_fee.toFixed(2)}</span></div>}
+                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 16, fontWeight: 700, marginTop: 4 }}><span>Total</span><span style={{ color: BL }}>${o.total.toFixed(2)}</span></div>
+                            {o.notes && <div style={{ marginTop: 8, padding: "8px 12px", background: "rgba(255,255,255,.03)", borderRadius: 8, fontSize: 12, color: "rgba(255,255,255,.4)" }}>📝 {o.notes}</div>}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
+                  {custOrders.length === 0 && <div style={{ textAlign: "center", padding: 30, color: "rgba(255,255,255,.3)" }}>No orders found</div>}
                 </div>
               </div>
-              <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>Order History</h3>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {orders.filter(o => o.customer_id === selectedCustomer.id).map(o => (
-                  <div key={o.id} style={{ background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 12, padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <div><div style={{ fontWeight: 600, fontSize: 14 }}>{o.order_number}</div><div style={{ fontSize: 12, color: "rgba(255,255,255,.4)" }}>{new Date(o.created_at).toLocaleDateString()} · {o.items.reduce((s: number, i: OrderItem) => s + i.qty, 0)} items</div></div>
-                    <div style={{ textAlign: "right" }}><div style={{ fontWeight: 700, color: BL }}>${o.total.toFixed(2)}</div><div style={{ fontSize: 11, color: o.status === "shipped" ? "#FFA940" : o.status === "pending" ? "rgba(255,255,255,.5)" : GR, textTransform: "capitalize" }}>{o.status}</div></div>
-                  </div>
-                ))}
-                {orders.filter(o => o.customer_id === selectedCustomer.id).length === 0 && <div style={{ textAlign: "center", padding: 30, color: "rgba(255,255,255,.3)" }}>No orders found</div>}
-              </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* APPLICANTS TAB */}
           {adminTab === "applicants" && (
@@ -476,34 +607,71 @@ const updateOrderStatus = async (id: string, status: string) => {
             </div>
           )}
 
-          {/* ORDERS TAB */}
+          {/* ORDERS TAB (with expandable line items) */}
           {adminTab === "orders" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {orders.length === 0 && <div style={{ textAlign: "center", padding: 40, color: "rgba(255,255,255,.4)" }}>No orders yet</div>}
               {orders.map((o, i) => (
-                <div key={o.id} style={{ background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 14, padding: "18px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, animation: `su .4s ease ${i * .05}s both` }}>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 15 }}>{o.order_number}</div>
-                    <div style={{ fontSize: 13, color: "rgba(255,255,255,.5)" }}>{o.customer_name} · {o.items.reduce((s: number, item: OrderItem) => s + item.qty, 0)} items · {o.pay_method === "card" ? "💳 Card" : "📄 Check"}</div>
-                    {o.notes && <div style={{ fontSize: 12, color: "rgba(255,255,255,.3)", marginTop: 2 }}>Note: {o.notes}</div>}
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <select
-                      value={o.status}
-                      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateOrderStatus(o.id, e.target.value)}
-                      style={{ padding: "6px 10px", background: "rgba(255,255,255,.06)", border: `1px solid ${B}33`, borderRadius: 8, color: "white", fontSize: 12, cursor: "pointer" }}
-                    >
-                      <option value="pending">Pending</option>
-                      <option value="confirmed">Confirmed</option>
-                      <option value="shipped">Shipped</option>
-                      <option value="delivered">Delivered</option>
-                      <option value="cancelled">Cancelled</option>
-                    </select>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontWeight: 700, fontSize: 18, color: BL }}>${o.total.toFixed(2)}</div>
-                      <div style={{ fontSize: 12, color: "rgba(255,255,255,.35)" }}>{new Date(o.created_at).toLocaleDateString()}</div>
+                <div key={o.id} style={{ animation: `su .4s ease ${i * .05}s both` }}>
+                  <div onClick={() => setExpandedOrder(expandedOrder === o.id ? null : o.id)} style={{ background: "rgba(255,255,255,.03)", border: `1px solid ${expandedOrder === o.id ? `${B}55` : `${B}22`}`, borderRadius: expandedOrder === o.id ? "14px 14px 0 0" : 14, padding: "18px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, cursor: "pointer", transition: "all .2s" }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 15 }}>{o.order_number}</div>
+                      <div style={{ fontSize: 13, color: "rgba(255,255,255,.5)" }}>{o.customer_name} · {o.items.reduce((s: number, item: OrderItem) => s + item.qty, 0)} items · {o.pay_method === "card" ? "💳 Card" : "📄 Check"}</div>
+                      {o.notes && <div style={{ fontSize: 12, color: "rgba(255,255,255,.3)", marginTop: 2 }}>Note: {o.notes}</div>}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <select
+                        value={o.status}
+                        onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                        onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateOrderStatus(o.id, e.target.value)}
+                        style={{ padding: "6px 10px", background: "rgba(255,255,255,.06)", border: `1px solid ${B}33`, borderRadius: 8, color: "white", fontSize: 12, cursor: "pointer" }}
+                      >
+                        <option value="pending">Pending</option>
+                        <option value="confirmed">Confirmed</option>
+                        <option value="shipped">Shipped</option>
+                        <option value="delivered">Delivered</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontWeight: 700, fontSize: 18, color: BL }}>${o.total.toFixed(2)}</div>
+                        <div style={{ fontSize: 12, color: "rgba(255,255,255,.35)" }}>{new Date(o.created_at).toLocaleDateString()}</div>
+                      </div>
+                      <span style={{ fontSize: 12, color: "rgba(255,255,255,.3)", transition: "transform .2s", transform: expandedOrder === o.id ? "rotate(180deg)" : "rotate(0)" }}>▼</span>
                     </div>
                   </div>
+
+                  {/* Expanded order line items */}
+                  {expandedOrder === o.id && (
+                    <div style={{ background: "rgba(255,255,255,.02)", border: `1px solid ${B}55`, borderTop: "none", borderRadius: "0 0 14px 14px", padding: "18px 24px", animation: "su .25s ease" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                        <thead>
+                          <tr style={{ borderBottom: `1px solid ${B}22` }}>
+                            <th style={{ textAlign: "left", padding: "8px 0", fontSize: 11, color: "rgba(255,255,255,.4)", textTransform: "uppercase", letterSpacing: ".5px", fontWeight: 600 }}>Product</th>
+                            <th style={{ textAlign: "center", padding: "8px 0", fontSize: 11, color: "rgba(255,255,255,.4)", textTransform: "uppercase", letterSpacing: ".5px", fontWeight: 600 }}>Qty</th>
+                            <th style={{ textAlign: "right", padding: "8px 0", fontSize: 11, color: "rgba(255,255,255,.4)", textTransform: "uppercase", letterSpacing: ".5px", fontWeight: 600 }}>Unit Price</th>
+                            <th style={{ textAlign: "right", padding: "8px 0", fontSize: 11, color: "rgba(255,255,255,.4)", textTransform: "uppercase", letterSpacing: ".5px", fontWeight: 600 }}>Line Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {o.items.map((item: OrderItem, idx: number) => (
+                            <tr key={idx} style={{ borderBottom: `1px solid ${B}11` }}>
+                              <td style={{ padding: "10px 0", fontSize: 14, fontWeight: 500 }}>{item.name}</td>
+                              <td style={{ padding: "10px 0", fontSize: 14, textAlign: "center", color: "rgba(255,255,255,.7)" }}>{item.qty}</td>
+                              <td style={{ padding: "10px 0", fontSize: 14, textAlign: "right", color: "rgba(255,255,255,.7)" }}>${item.unit_price.toFixed(2)}</td>
+                              <td style={{ padding: "10px 0", fontSize: 14, textAlign: "right", fontWeight: 600, color: BL }}>${item.line_total.toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${B}22`, display: "flex", flexDirection: "column", gap: 6 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: "rgba(255,255,255,.4)" }}>Subtotal (Wholesale)</span><span>${o.subtotal.toFixed(2)}</span></div>
+                        {o.discount_amount > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: GR }}>{o.tier_name} Discount ({(o.tier_discount * 100).toFixed(0)}%)</span><span style={{ color: GR }}>-${o.discount_amount.toFixed(2)}</span></div>}
+                        {o.cc_fee > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: "#FFA940" }}>CC Fee (2.99%)</span><span style={{ color: "#FFA940" }}>+${o.cc_fee.toFixed(2)}</span></div>}
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 16, fontWeight: 700, marginTop: 4 }}><span>Total</span><span style={{ color: BL }}>${o.total.toFixed(2)}</span></div>
+                        {o.notes && <div style={{ marginTop: 8, padding: "8px 12px", background: "rgba(255,255,255,.03)", borderRadius: 8, fontSize: 12, color: "rgba(255,255,255,.4)" }}>📝 {o.notes}</div>}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
