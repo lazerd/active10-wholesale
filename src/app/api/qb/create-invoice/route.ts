@@ -64,28 +64,65 @@ export async function POST(req: NextRequest) {
       qbCustomerId = syncData.qb_customer_id;
     }
 
+    // Get all products to look up SKUs
+    const { data: products } = await supabase
+      .from("products")
+      .select("id, qb_sku");
+
+    const skuMap: Record<string, string> = {};
+    (products || []).forEach((p: { id: string; qb_sku: string | null }) => {
+      if (p.qb_sku) skuMap[p.id] = p.qb_sku;
+    });
+
+    // Look up QBO Item IDs by SKU
+    const itemCache: Record<string, { Id: string; Name: string }> = {};
+    for (const sku of Object.values(skuMap)) {
+      if (itemCache[sku]) continue;
+      try {
+        const q = await qbApi(
+          tokens.realm_id,
+          tokens.access_token,
+          `query?query=${encodeURIComponent(`SELECT * FROM Item WHERE Sku = '${sku}'`)}`
+        );
+        if (q?.QueryResponse?.Item?.length > 0) {
+          const item = q.QueryResponse.Item[0];
+          itemCache[sku] = { Id: item.Id, Name: item.Name };
+        }
+      } catch {
+        // SKU not found, will fall back to description-only
+      }
+    }
+
+    // Build invoice line items
     const orderItems = order.items || [];
     const lines = orderItems.map(
-      (item: { name?: string; qty: number; unit_price?: number }, index: number) => ({
-        LineNum: index + 1,
-        Amount: item.qty * (item.unit_price || 0),
-        DetailType: "SalesItemLineDetail",
-        Description: item.name || "Product",
-        SalesItemLineDetail: {
-          Qty: item.qty,
-          UnitPrice: item.unit_price || 0,
-        },
-      })
+      (item: { product_id?: string; name?: string; qty: number; unit_price?: number }, index: number) => {
+        const sku = item.product_id ? skuMap[item.product_id] : null;
+        const qbItem = sku ? itemCache[sku] : null;
+
+        const line: Record<string, unknown> = {
+          LineNum: index + 1,
+          Amount: item.qty * (item.unit_price || 0),
+          DetailType: "SalesItemLineDetail",
+          Description: item.name || "Product",
+          SalesItemLineDetail: {
+            Qty: item.qty,
+            UnitPrice: item.unit_price || 0,
+            ...(qbItem ? { ItemRef: { value: qbItem.Id, name: qbItem.Name } } : {}),
+          },
+        };
+        return line;
+      }
     );
 
+    // Do NOT set DocNumber — let QuickBooks auto-assign the next number
     const invoiceData = {
       CustomerRef: { value: qbCustomerId },
       Line: lines,
-      DocNumber: order.order_number || undefined,
       TxnDate: order.created_at
         ? new Date(order.created_at).toISOString().split("T")[0]
         : undefined,
-      PrivateNote: `Wholesale order ${order.order_number || order.id} from Active 10 portal`,
+      PrivateNote: `Wholesale portal order ${order.order_number || order.id}`,
     };
 
     const result = await qbApi(
@@ -108,7 +145,7 @@ export async function POST(req: NextRequest) {
       success: true,
       qb_invoice_id: qbInvoiceId,
       qb_doc_number: qbDocNumber,
-      message: "Invoice created in QuickBooks",
+      message: `Invoice #${qbDocNumber} created in QuickBooks`,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
