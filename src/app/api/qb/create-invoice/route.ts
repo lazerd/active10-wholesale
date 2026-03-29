@@ -7,54 +7,18 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// Match order item name to QB item by keywords
-function findQBItem(orderItemName: string, qbItems: { Id: string; Name: string; Sku: string }[]): { Id: string; Name: string } | null {
-  const name = orderItemName.toLowerCase();
-
-  // Define mapping keywords: [order name contains, QB name contains]
-  const rules: [string[], string[]][] = [
-    [["plus", "pump", "8oz"], ["plus", "pump"]],
-    [["plus", "pump", "8"], ["plus", "pump"]],
-    [["plus", "roll"], ["plus", "roll"]],
-    [["plus", "tube", "3oz"], ["plus", "3oz", "tube"]],
-    [["plus", "tube", "3"], ["plus", "tube"]],
-    [["sleep"], ["sleep"]],
-    [["capsule"], ["cap"]],
-    [["cbd", "turmeric"], ["cap"]],
-    [["original", "pump", "8"], ["8oz", "pump", "regular"]],
-    [["pump", "8oz"], ["8oz", "pump"]],
-    [["original", "jar", "2"], ["2 oz", "jar"]],
-    [["jar", "2oz"], ["2 oz", "jar"]],
-    [["original", "tube", "4"], ["4oz", "tube"]],
-    [["tube", "4oz"], ["4oz", "tube"]],
-    [["original", "roll"], ["roll", "regular"]],
-    [["roll-on", "3oz"], ["roll", "3oz"]],
-  ];
-
-  for (const [orderKeys, qbKeys] of rules) {
-    if (orderKeys.every(k => name.includes(k))) {
-      const match = qbItems.find(item => {
-        const qbName = item.Name.toLowerCase();
-        return qbKeys.every(k => qbName.includes(k));
-      });
-      if (match) return { Id: match.Id, Name: match.Name };
-    }
-  }
-
-  // Fallback: find best overlap of words
-  const words = name.split(/[\s\-()]+/).filter(w => w.length > 2);
-  let bestMatch: { Id: string; Name: string } | null = null;
-  let bestScore = 0;
-  for (const item of qbItems) {
-    const qbName = item.Name.toLowerCase();
-    const score = words.filter(w => qbName.includes(w)).length;
-    if (score > bestScore && score >= 2) {
-      bestScore = score;
-      bestMatch = { Id: item.Id, Name: item.Name };
-    }
-  }
-  return bestMatch;
-}
+// Direct map: portal product ID → exact QB item Name
+const PRODUCT_TO_QB_NAME: Record<string, string> = {
+  "original-jar-2oz": "2 oz Jar",
+  "original-pump-8oz": "8oz Pump Regular",
+  "original-tube-4oz": "4oz Active 10 Tube Regular",
+  "original-rollon-3oz": "3oz Roll-On Regular",
+  "plus-tube-3oz": "Active 10 PLUS 3oz Tube with CBD",
+  "cbd-capsules": "NEW CBD, Boswellia and Turmeric Caps - 30 per bottle",
+  "plus-rollon": "3 oz Active 10 Plus Roll On",
+  "plus-pump-8oz": "8 oz. Active 10 Plus CBD Cream Pump",
+  "sleep-drops": "Sleep Drops",
+};
 
 export async function POST(req: NextRequest) {
   try {
@@ -113,21 +77,18 @@ export async function POST(req: NextRequest) {
       qbCustomerId = syncData.qb_customer_id;
     }
 
-    // Fetch ALL items from QB
-    let qbItems: { Id: string; Name: string; Sku: string }[] = [];
+    // Fetch ALL items from QB and index by Name
+    const qbItemsByName: Record<string, { Id: string; Name: string }> = {};
     try {
       const allItems = await qbApi(
         tokens.realm_id,
         tokens.access_token,
         `query?query=${encodeURIComponent("SELECT * FROM Item MAXRESULTS 1000")}`
       );
-      qbItems = (allItems?.QueryResponse?.Item || []).map((i: any) => ({
-        Id: i.Id,
-        Name: i.Name,
-        Sku: i.Sku || "",
-      }));
-      console.log("QB items loaded:", qbItems.length);
-      console.log("QB item names:", qbItems.map(i => `${i.Name} (${i.Id})`));
+      for (const item of allItems?.QueryResponse?.Item || []) {
+        qbItemsByName[item.Name] = { Id: item.Id, Name: item.Name };
+      }
+      console.log("QB items indexed:", Object.keys(qbItemsByName).length);
     } catch (e) {
       console.error("Failed to fetch QB items:", e);
     }
@@ -151,13 +112,14 @@ export async function POST(req: NextRequest) {
       console.error("Failed to get latest invoice number:", e);
     }
 
-    // Build invoice line items with name-based matching
+    // Build invoice line items using direct product→QB name mapping
     const orderItems = order.items || [];
     const lines = orderItems.map(
       (item: { product_id?: string; name?: string; qty: number; unit_price?: number }, index: number) => {
-        const qbItem = item.name ? findQBItem(item.name, qbItems) : null;
+        const qbName = item.product_id ? PRODUCT_TO_QB_NAME[item.product_id] : null;
+        const qbItem = qbName ? qbItemsByName[qbName] : null;
 
-        console.log(`Line ${index + 1}: "${item.name}" → ${qbItem ? `MATCHED "${qbItem.Name}" (${qbItem.Id})` : "NO MATCH"}`);
+        console.log(`Line ${index + 1}: product="${item.product_id}" → qbName="${qbName}" → ${qbItem ? `MATCHED ID ${qbItem.Id}` : "NO MATCH"}`);
 
         return {
           LineNum: index + 1,
