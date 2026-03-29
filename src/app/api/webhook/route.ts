@@ -58,9 +58,21 @@ export async function POST(req: NextRequest) {
 
     if (type === "order") {
       const items = record.items || [];
+      const SKU_MAP: Record<string, string> = {
+        "original-jar-2oz": "001",
+        "original-pump-8oz": "004",
+        "original-tube-4oz": "008",
+        "original-rollon-3oz": "009",
+        "plus-tube-3oz": "030",
+        "cbd-capsules": "031",
+        "plus-rollon": "032",
+        "plus-pump-8oz": "033",
+        "sleep-drops": "041",
+      };
       const itemRows = items
         .map((item: any) => `
           <tr>
+            <td style="padding:8px;border-bottom:1px solid #eee">${SKU_MAP[item.product_id] || "—"}</td>
             <td style="padding:8px;border-bottom:1px solid #eee">${item.name}</td>
             <td style="padding:8px;border-bottom:1px solid #eee;text-align:center">${item.qty}</td>
             <td style="padding:8px;border-bottom:1px solid #eee;text-align:right">$${Number(item.unit_price).toFixed(2)}</td>
@@ -82,6 +94,7 @@ export async function POST(req: NextRequest) {
           <h3 style="color:#333">Items</h3>
           <table style="border-collapse:collapse;width:100%">
             <tr style="background:#f5f5f5">
+              <th style="padding:8px;text-align:left">SKU</th>
               <th style="padding:8px;text-align:left">Product</th>
               <th style="padding:8px;text-align:center">Qty</th>
               <th style="padding:8px;text-align:right">Unit</th>
