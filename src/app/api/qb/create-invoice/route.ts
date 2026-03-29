@@ -74,10 +74,11 @@ export async function POST(req: NextRequest) {
       if (p.qb_sku) skuMap[p.id] = p.qb_sku;
     });
 
-    // Look up QBO Item IDs by SKU
+    // Look up QBO Item IDs by SKU, with Name fallback
     const itemCache: Record<string, { Id: string; Name: string }> = {};
-    for (const sku of Object.values(skuMap)) {
+    for (const [productId, sku] of Object.entries(skuMap)) {
       if (itemCache[sku]) continue;
+      // Try by SKU first
       try {
         const q = await qbApi(
           tokens.realm_id,
@@ -87,10 +88,47 @@ export async function POST(req: NextRequest) {
         if (q?.QueryResponse?.Item?.length > 0) {
           const item = q.QueryResponse.Item[0];
           itemCache[sku] = { Id: item.Id, Name: item.Name };
+          continue;
+        }
+      } catch (e) {
+        console.error(`SKU lookup failed for ${sku}:`, e);
+      }
+      // Fallback: try by item Name containing the product name
+      try {
+        const orderItem = (order.items || []).find((i: { product_id?: string }) => i.product_id === productId);
+        if (orderItem?.name) {
+          const searchName = orderItem.name.replace(/'/g, "\\'");
+          const q2 = await qbApi(
+            tokens.realm_id,
+            tokens.access_token,
+            `query?query=${encodeURIComponent(`SELECT * FROM Item WHERE Name LIKE '%${searchName}%'`)}`
+          );
+          if (q2?.QueryResponse?.Item?.length > 0) {
+            const item = q2.QueryResponse.Item[0];
+            itemCache[sku] = { Id: item.Id, Name: item.Name };
+          }
         }
       } catch {
-        // SKU not found, will fall back to description-only
+        // Name lookup also failed
       }
+    }
+
+    // Get next invoice number from QB
+    let nextDocNumber: string | undefined;
+    try {
+      const latestInv = await qbApi(
+        tokens.realm_id,
+        tokens.access_token,
+        `query?query=${encodeURIComponent("SELECT DocNumber FROM Invoice ORDER BY DocNumber DESC MAXRESULTS 1")}`
+      );
+      if (latestInv?.QueryResponse?.Invoice?.length > 0) {
+        const lastNum = parseInt(latestInv.QueryResponse.Invoice[0].DocNumber, 10);
+        if (!isNaN(lastNum)) {
+          nextDocNumber = String(lastNum + 1);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to get latest invoice number:", e);
     }
 
     // Build invoice line items
@@ -100,7 +138,7 @@ export async function POST(req: NextRequest) {
         const sku = item.product_id ? skuMap[item.product_id] : null;
         const qbItem = sku ? itemCache[sku] : null;
 
-        const line: Record<string, unknown> = {
+        return {
           LineNum: index + 1,
           Amount: item.qty * (item.unit_price || 0),
           DetailType: "SalesItemLineDetail",
@@ -111,12 +149,10 @@ export async function POST(req: NextRequest) {
             ...(qbItem ? { ItemRef: { value: qbItem.Id, name: qbItem.Name } } : {}),
           },
         };
-        return line;
       }
     );
 
-    // Do NOT set DocNumber — let QuickBooks auto-assign the next number
-    const invoiceData = {
+    const invoiceData: Record<string, unknown> = {
       CustomerRef: { value: qbCustomerId },
       Line: lines,
       TxnDate: order.created_at
@@ -124,6 +160,11 @@ export async function POST(req: NextRequest) {
         : undefined,
       PrivateNote: `Wholesale portal order ${order.order_number || order.id}`,
     };
+
+    // Set invoice number if we found the next one
+    if (nextDocNumber) {
+      invoiceData.DocNumber = nextDocNumber;
+    }
 
     const result = await qbApi(
       tokens.realm_id,
@@ -134,7 +175,7 @@ export async function POST(req: NextRequest) {
     );
 
     const qbInvoiceId = result.Invoice.Id;
-    const qbDocNumber = result.Invoice.DocNumber;
+    const qbDocNumber = result.Invoice.DocNumber || nextDocNumber || qbInvoiceId;
 
     await supabase
       .from("orders")
