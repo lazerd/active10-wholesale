@@ -7,19 +7,6 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// Direct map: portal product ID → exact QB item Name
-const PRODUCT_TO_QB_NAME: Record<string, string> = {
-  "original-jar-2oz": "2 oz Jar",
-  "original-pump-8oz": "8oz Pump Regular",
-  "original-tube-4oz": "4oz Active 10 Tube Regular",
-  "original-rollon-3oz": "3oz Roll-On Regular",
-  "plus-tube-3oz": "Active 10 PLUS 3oz Tube with CBD",
-  "cbd-capsules": "NEW CBD, Boswellia and Turmeric Caps - 30 per bottle",
-  "plus-rollon": "3 oz Active 10 Plus Roll On",
-  "plus-pump-8oz": "8 oz. Active 10 Plus CBD Cream Pump",
-  "sleep-drops": "Sleep Drops",
-};
-
 export async function POST(req: NextRequest) {
   try {
     const { orderId } = await req.json();
@@ -77,18 +64,45 @@ export async function POST(req: NextRequest) {
       qbCustomerId = syncData.qb_customer_id;
     }
 
-    // Fetch ALL items from QB and index by Name
-    const qbItemsByName: Record<string, { Id: string; Name: string }> = {};
+    // Get product SKU mapping from Supabase
+    const { data: products } = await supabase
+      .from("products")
+      .select("id, qb_sku");
+
+    const skuMap: Record<string, string> = {};
+    (products || []).forEach((p: { id: string; qb_sku: string | null }) => {
+      if (p.qb_sku) skuMap[p.id] = p.qb_sku;
+    });
+
+    // Fetch ALL items from QB and index by EVERY possible field
+    const qbItemLookup: Record<string, { Id: string; Name: string }> = {};
     try {
       const allItems = await qbApi(
         tokens.realm_id,
         tokens.access_token,
         `query?query=${encodeURIComponent("SELECT * FROM Item MAXRESULTS 1000")}`
       );
-      for (const item of allItems?.QueryResponse?.Item || []) {
-        qbItemsByName[item.Name] = { Id: item.Id, Name: item.Name };
+      const items = allItems?.QueryResponse?.Item || [];
+      for (const item of items) {
+        const ref = { Id: item.Id, Name: item.Name };
+        // Index by every field so we can match no matter what
+        if (item.Name) qbItemLookup[item.Name] = ref;
+        if (item.Sku) qbItemLookup[item.Sku] = ref;
+        if (item.Description) qbItemLookup[item.Description] = ref;
+        if (item.FullyQualifiedName) qbItemLookup[item.FullyQualifiedName] = ref;
+        // Also store by Id for direct lookup
+        qbItemLookup[item.Id] = ref;
       }
-      console.log("QB items indexed:", Object.keys(qbItemsByName).length);
+      // Log ALL fields from first 3 items so we can see the actual structure
+      console.log("SAMPLE QB ITEMS (first 3):", JSON.stringify(items.slice(0, 3).map((i: any) => ({
+        Id: i.Id,
+        Name: i.Name,
+        Sku: i.Sku,
+        Description: i.Description,
+        FullyQualifiedName: i.FullyQualifiedName,
+      })), null, 2));
+      console.log("All lookup keys:", Object.keys(qbItemLookup));
+      console.log("SKU map from DB:", JSON.stringify(skuMap));
     } catch (e) {
       console.error("Failed to fetch QB items:", e);
     }
@@ -112,14 +126,22 @@ export async function POST(req: NextRequest) {
       console.error("Failed to get latest invoice number:", e);
     }
 
-    // Build invoice line items using direct product→QB name mapping
+    // Build invoice line items
     const orderItems = order.items || [];
     const lines = orderItems.map(
       (item: { product_id?: string; name?: string; qty: number; unit_price?: number }, index: number) => {
-        const qbName = item.product_id ? PRODUCT_TO_QB_NAME[item.product_id] : null;
-        const qbItem = qbName ? qbItemsByName[qbName] : null;
+        const sku = item.product_id ? skuMap[item.product_id] : null;
 
-        console.log(`Line ${index + 1}: product="${item.product_id}" → qbName="${qbName}" → ${qbItem ? `MATCHED ID ${qbItem.Id}` : "NO MATCH"}`);
+        // Try matching by: SKU code, SKU with leading zeros stripped, product_id
+        let qbItem = null;
+        if (sku) {
+          qbItem = qbItemLookup[sku]
+            || qbItemLookup[sku.replace(/^0+/, '')]
+            || qbItemLookup[`0${sku}`]
+            || qbItemLookup[`00${sku}`];
+        }
+
+        console.log(`Line ${index + 1}: product="${item.product_id}", sku="${sku}", matched=${qbItem ? `YES → "${qbItem.Name}" (ID: ${qbItem.Id})` : "NO"}`);
 
         return {
           LineNum: index + 1,
