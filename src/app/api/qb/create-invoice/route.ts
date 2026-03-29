@@ -7,6 +7,55 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+// Match order item name to QB item by keywords
+function findQBItem(orderItemName: string, qbItems: { Id: string; Name: string; Sku: string }[]): { Id: string; Name: string } | null {
+  const name = orderItemName.toLowerCase();
+
+  // Define mapping keywords: [order name contains, QB name contains]
+  const rules: [string[], string[]][] = [
+    [["plus", "pump", "8oz"], ["plus", "pump"]],
+    [["plus", "pump", "8"], ["plus", "pump"]],
+    [["plus", "roll"], ["plus", "roll"]],
+    [["plus", "tube", "3oz"], ["plus", "3oz", "tube"]],
+    [["plus", "tube", "3"], ["plus", "tube"]],
+    [["sleep"], ["sleep"]],
+    [["capsule"], ["cap"]],
+    [["cbd", "turmeric"], ["cap"]],
+    [["original", "pump", "8"], ["8oz", "pump", "regular"]],
+    [["pump", "8oz"], ["8oz", "pump"]],
+    [["original", "jar", "2"], ["2 oz", "jar"]],
+    [["jar", "2oz"], ["2 oz", "jar"]],
+    [["original", "tube", "4"], ["4oz", "tube"]],
+    [["tube", "4oz"], ["4oz", "tube"]],
+    [["original", "roll"], ["roll", "regular"]],
+    [["roll-on", "3oz"], ["roll", "3oz"]],
+  ];
+
+  for (const [orderKeys, qbKeys] of rules) {
+    if (orderKeys.every(k => name.includes(k))) {
+      const match = qbItems.find(item => {
+        const qbName = item.Name.toLowerCase();
+        return qbKeys.every(k => qbName.includes(k));
+      });
+      if (match) return { Id: match.Id, Name: match.Name };
+    }
+  }
+
+  // Fallback: find best overlap of words
+  const words = name.split(/[\s\-()]+/).filter(w => w.length > 2);
+  let bestMatch: { Id: string; Name: string } | null = null;
+  let bestScore = 0;
+  for (const item of qbItems) {
+    const qbName = item.Name.toLowerCase();
+    const score = words.filter(w => qbName.includes(w)).length;
+    if (score > bestScore && score >= 2) {
+      bestScore = score;
+      bestMatch = { Id: item.Id, Name: item.Name };
+    }
+  }
+  return bestMatch;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { orderId } = await req.json();
@@ -64,39 +113,26 @@ export async function POST(req: NextRequest) {
       qbCustomerId = syncData.qb_customer_id;
     }
 
-    // Get all products to look up SKUs
-    const { data: products } = await supabase
-      .from("products")
-      .select("id, qb_sku");
-
-    const skuMap: Record<string, string> = {};
-    (products || []).forEach((p: { id: string; qb_sku: string | null }) => {
-      if (p.qb_sku) skuMap[p.id] = p.qb_sku;
-    });
-
-    // Fetch ALL items from QB and match by SKU locally
-    // (QB query API doesn't reliably support WHERE Sku = '')
-    const itemCache: Record<string, { Id: string; Name: string }> = {};
+    // Fetch ALL items from QB
+    let qbItems: { Id: string; Name: string; Sku: string }[] = [];
     try {
       const allItems = await qbApi(
         tokens.realm_id,
         tokens.access_token,
         `query?query=${encodeURIComponent("SELECT * FROM Item MAXRESULTS 1000")}`
       );
-      const qbItems = allItems?.QueryResponse?.Item || [];
-      for (const qbItem of qbItems) {
-        if (qbItem.Sku) {
-          itemCache[qbItem.Sku] = { Id: qbItem.Id, Name: qbItem.Name };
-        }
-      }
-      console.log("QB items loaded:", Object.keys(itemCache).length, "with SKUs");
-      console.log("SKU map from DB:", JSON.stringify(skuMap));
-      console.log("Item cache keys:", Object.keys(itemCache));
+      qbItems = (allItems?.QueryResponse?.Item || []).map((i: any) => ({
+        Id: i.Id,
+        Name: i.Name,
+        Sku: i.Sku || "",
+      }));
+      console.log("QB items loaded:", qbItems.length);
+      console.log("QB item names:", qbItems.map(i => `${i.Name} (${i.Id})`));
     } catch (e) {
       console.error("Failed to fetch QB items:", e);
     }
 
-    // Get next invoice number — query by most recent creation date
+    // Get next invoice number
     let nextDocNumber: string | undefined;
     try {
       const latestInv = await qbApi(
@@ -106,25 +142,22 @@ export async function POST(req: NextRequest) {
       );
       if (latestInv?.QueryResponse?.Invoice?.length > 0) {
         const lastDoc = latestInv.QueryResponse.Invoice[0].DocNumber;
-        console.log("Latest QB invoice DocNumber:", lastDoc);
         const lastNum = parseInt(lastDoc, 10);
         if (!isNaN(lastNum)) {
           nextDocNumber = String(lastNum + 1);
-          console.log("Next invoice number:", nextDocNumber);
         }
       }
     } catch (e) {
       console.error("Failed to get latest invoice number:", e);
     }
 
-    // Build invoice line items
+    // Build invoice line items with name-based matching
     const orderItems = order.items || [];
     const lines = orderItems.map(
       (item: { product_id?: string; name?: string; qty: number; unit_price?: number }, index: number) => {
-        const sku = item.product_id ? skuMap[item.product_id] : null;
-        const qbItem = sku ? itemCache[sku] : null;
+        const qbItem = item.name ? findQBItem(item.name, qbItems) : null;
 
-        console.log(`Line ${index + 1}: product=${item.product_id}, sku=${sku}, qbMatch=${qbItem ? qbItem.Name : "NONE"}`);
+        console.log(`Line ${index + 1}: "${item.name}" → ${qbItem ? `MATCHED "${qbItem.Name}" (${qbItem.Id})` : "NO MATCH"}`);
 
         return {
           LineNum: index + 1,
@@ -152,8 +185,6 @@ export async function POST(req: NextRequest) {
     if (nextDocNumber) {
       invoiceData.DocNumber = nextDocNumber;
     }
-
-    console.log("Invoice payload:", JSON.stringify(invoiceData, null, 2));
 
     const result = await qbApi(
       tokens.realm_id,
