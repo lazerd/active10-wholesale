@@ -1,5 +1,5 @@
 export const PRODUCTS = [
-  { id: "plus-tube-3oz", name: "Active 10 PLUS", subtitle: "Full Spectrum Hemp Oil · 3oz Tube", retail: 39.95, img: "https://www.getactive10.com/cdn/shop/products/CBDTubeNEW_370x373.png?v=1664841562", badge: "CBD" as const, cat: "plus", color: "#e8f4ec" },
+  { id: "plus-tube-3oz", name: "Active 10 PLUS Tube", subtitle: "Full Spectrum Hemp Oil · 3oz Tube", retail: 39.95, img: "https://www.getactive10.com/cdn/shop/products/CBDTubeNEW_370x373.png?v=1664841562", badge: "CBD" as const, cat: "plus", color: "#e8f4ec" },
   { id: "plus-rollon", name: "Active 10 PLUS Roll-On", subtitle: "Full Spectrum Hemp Oil · 3oz", retail: 39.95, img: "https://www.getactive10.com/cdn/shop/products/attempt2_600x600.jpg?v=1664841520", badge: "CBD" as const, cat: "plus", color: "#e8f0f4" },
   { id: "plus-pump-8oz", name: "Active 10 PLUS Pump", subtitle: "Full Spectrum Hemp Oil · 8oz", retail: 69.95, img: "https://www.getactive10.com/cdn/shop/products/CBDPUMP1_600x601.jpg?v=1664841567", badge: "CBD" as const, cat: "plus", color: "#e8ecf4" },
   { id: "original-tube-4oz", name: "Active 10 Original Tube", subtitle: "Pain Relief & Healing · 4oz", retail: 29.95, img: "https://www.getactive10.com/cdn/shop/products/newtube_600x601.jpg?v=1664841570", badge: null, cat: "original", color: "#f4f0e8" },
