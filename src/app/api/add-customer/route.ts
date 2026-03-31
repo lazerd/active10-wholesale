@@ -61,6 +61,8 @@ export async function POST(req: NextRequest) {
     });
 
     if (custError) {
+      // Clean up the auth user so the email isn't stuck
+      await supabaseAdmin.auth.admin.deleteUser(authUser.user.id);
       return NextResponse.json({ error: "Failed to create customer: " + custError.message }, { status: 500 });
     }
 
