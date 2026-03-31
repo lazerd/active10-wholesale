@@ -28,11 +28,11 @@ export function getTier(subtotal: number): Tier {
 }
 
 export function getWholesalePrice(retail: number): number {
-  return retail * 0.5;
+  return Math.round(retail * 0.5 * 100) / 100;
 }
 
 export function getFinalPrice(retail: number, tierDiscount: number): number {
-  return getWholesalePrice(retail) * (1 - tierDiscount);
+  return Math.round(getWholesalePrice(retail) * (1 - tierDiscount) * 100) / 100;
 }
 
 export const CC_FEE_RATE = 0.0299;

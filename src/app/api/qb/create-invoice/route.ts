@@ -143,14 +143,15 @@ export async function POST(req: NextRequest) {
 
         console.log(`Line ${index + 1}: product="${item.product_id}", sku="${sku}", matched=${qbItem ? `YES → "${qbItem.Name}" (ID: ${qbItem.Id})` : "NO"}`);
 
+        const up = Math.round((item.unit_price || 0) * 100) / 100;
         return {
           LineNum: index + 1,
-          Amount: item.qty * (item.unit_price || 0),
+          Amount: Math.round(item.qty * up * 100) / 100,
           DetailType: "SalesItemLineDetail",
           Description: item.name || "Product",
           SalesItemLineDetail: {
             Qty: item.qty,
-            UnitPrice: item.unit_price || 0,
+            UnitPrice: up,
             ...(qbItem ? { ItemRef: { value: qbItem.Id, name: qbItem.Name } } : {}),
           },
         };
