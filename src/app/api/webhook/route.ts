@@ -9,19 +9,14 @@ const NOTIFY_EMAILS = [
   "activeformulationorders@gmail.com",
 ];
 
-async function sendEmail(to: string, subject: string, html: string) {
+async function sendEmail(to: string, subject: string, html: string, from = "Active 10 Wholesale <notifications@getactive10.com>") {
   return fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${RESEND_API_KEY}`,
     },
-    body: JSON.stringify({
-      from: "Active 10 Wholesale <notifications@getactive10.com>",
-      to,
-      subject,
-      html,
-    }),
+    body: JSON.stringify({ from, to, subject, html }),
   });
 }
 
