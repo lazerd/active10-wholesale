@@ -175,7 +175,7 @@ export async function POST(req: NextRequest) {
 
                 <p style="color:#888;font-size:12px;margin-top:28px;line-height:1.6;">
                   Questions? Reply to this email or reach us at
-                  <a href="mailto:orders@getactive10.com" style="color:#0072BC;">orders@getactive10.com</a>
+                  <a href="mailto:activeformulations@gmail.com" style="color:#0072BC;">orders@getactive10.com</a>
                 </p>
               </div>
 
