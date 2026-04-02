@@ -119,6 +119,88 @@ export async function POST(req: NextRequest) {
         const res = await sendEmail(email, subject, html);
         results.push({ email, status: res.status });
       }
+
+      // Customer confirmation email
+      if (record.customer_email) {
+        const itemListRows = (record.items || []).map((item: any) => `
+          <tr>
+            <td style="padding:10px 8px;border-bottom:1px solid #e8f0fe;color:#1a1a2e">${item.name}</td>
+            <td style="padding:10px 8px;border-bottom:1px solid #e8f0fe;text-align:center;font-weight:600;color:#0072BC">${item.qty}</td>
+          </tr>
+        `).join("");
+
+        const confirmHtml = `
+          <div style="font-family:'Helvetica Neue',Arial,sans-serif;max-width:600px;margin:0 auto;background:#f4f7fc;padding:32px 16px;">
+            <div style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
+
+              <!-- Header -->
+              <div style="background:linear-gradient(135deg,#0072BC,#00A8E8);padding:32px 32px 24px;text-align:center;">
+                <div style="display:inline-block;background:rgba(255,255,255,0.15);border-radius:10px;padding:8px 18px;margin-bottom:12px;">
+                  <span style="color:white;font-size:22px;font-weight:900;letter-spacing:1px;">A10</span>
+                </div>
+                <h1 style="color:white;margin:0;font-size:22px;font-weight:700;letter-spacing:-0.5px;">Order Received!</h1>
+                <p style="color:rgba(255,255,255,0.85);margin:8px 0 0;font-size:14px;">We've got your wholesale order and we're on it.</p>
+              </div>
+
+              <!-- Body -->
+              <div style="padding:32px;">
+                <p style="color:#1a1a2e;font-size:15px;margin:0 0 8px;">Hi <strong>${record.customer_name}</strong>,</p>
+                <p style="color:#444;font-size:14px;line-height:1.7;margin:0 0 24px;">
+                  Thank you for your order! We've received it and our team will be reviewing it shortly.
+                  You'll receive a follow-up email with your official invoice and a secure payment link.
+                </p>
+
+                <!-- Order # badge -->
+                <div style="background:#f0f7ff;border:1px solid #cce0f5;border-radius:8px;padding:14px 18px;margin-bottom:24px;display:flex;align-items:center;">
+                  <span style="color:#666;font-size:13px;">Order Reference:&nbsp;</span>
+                  <span style="color:#0072BC;font-weight:700;font-size:14px;">${record.order_number || "Pending"}</span>
+                </div>
+
+                <!-- Items ordered -->
+                <h3 style="color:#1a1a2e;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin:0 0 12px;">Items Ordered</h3>
+                <table style="width:100%;border-collapse:collapse;background:#fafcff;border-radius:8px;overflow:hidden;border:1px solid #e8f0fe;">
+                  <thead>
+                    <tr style="background:#e8f0fe;">
+                      <th style="padding:10px 8px;text-align:left;font-size:12px;color:#555;text-transform:uppercase;letter-spacing:0.5px;">Product</th>
+                      <th style="padding:10px 8px;text-align:center;font-size:12px;color:#555;text-transform:uppercase;letter-spacing:0.5px;">Qty</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${itemListRows}
+                  </tbody>
+                </table>
+
+                <!-- What's next -->
+                <div style="margin-top:28px;background:#fffbf0;border-left:4px solid #F4B942;border-radius:0 8px 8px 0;padding:16px 18px;">
+                  <p style="margin:0;font-size:13px;color:#7a6000;font-weight:600;">What happens next?</p>
+                  <p style="margin:6px 0 0;font-size:13px;color:#7a6000;line-height:1.6;">
+                    Our team will review your order and send you an invoice with a secure payment link within 1 business day.
+                  </p>
+                </div>
+
+                <p style="color:#888;font-size:12px;margin-top:28px;line-height:1.6;">
+                  Questions? Reply to this email or reach us at
+                  <a href="mailto:orders@getactive10.com" style="color:#0072BC;">orders@getactive10.com</a>
+                </p>
+              </div>
+
+              <!-- Footer -->
+              <div style="background:#f4f7fc;padding:16px 32px;text-align:center;border-top:1px solid #e8f0fe;">
+                <p style="margin:0;font-size:11px;color:#aaa;">Active Formulations Inc. · <a href="https://wholesale.getactive10.com" style="color:#0072BC;text-decoration:none;">wholesale.getactive10.com</a></p>
+              </div>
+
+            </div>
+          </div>
+        `;
+
+        await sendEmail(
+          record.customer_email,
+          "We received your order — invoice coming soon!",
+          confirmHtml,
+          "Active 10 Wholesale <noreply@getactive10.com>"
+        );
+      }
+
       return NextResponse.json({ ok: true, type: "order", results });
     }
 
