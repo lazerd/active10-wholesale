@@ -83,7 +83,41 @@ export default function App() {
   const [custSearch, setCustSearch] = useState("");
   const [custSearchFocused, setCustSearchFocused] = useState(false);
 
-  useEffect(() => { supabase.auth.getSession().then(({ data: { session: s } }) => { setSession(s); if (s) loadUserData(s); else setLoading(false); }); const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => { setSession(s); if (s) loadUserData(s); else { setLoading(false); setIsAdmin(false); setCustomer(null); } }); return () => subscription.unsubscribe(); }, []);
+  // ── AUTH ─────────────────────────────────────────────────────────────────
+  // FIX: Strip any Supabase error params (e.g. otp_expired) from the URL
+  // immediately on mount so they don't interfere with a fresh password login.
+  // Also, only wipe the session state when the event is explicitly SIGNED_OUT —
+  // not on every null-session event (which fires when an expired magic link is
+  // detected in the URL even while a valid password session exists).
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    if (p.get("error_code") || p.get("error_description")) {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+
+    supabase.auth.getSession().then(({ data: { session: s } }) => {
+      setSession(s);
+      if (s) loadUserData(s);
+      else setLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
+      setSession(s);
+      if (s) {
+        loadUserData(s);
+      } else if (event === "SIGNED_OUT") {
+        setLoading(false);
+        setIsAdmin(false);
+        setCustomer(null);
+      }
+      // For any other event with a null session (e.g. failed OTP exchange),
+      // do nothing — preserve whatever session state we already have.
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+  // ─────────────────────────────────────────────────────────────────────────
+
   useEffect(() => { supabase.from("products").select("*").eq("active", true).order("sort_order").then(({ data }) => { if (data) setProducts(data as Product[]); }); }, []);
   useEffect(() => { const p = new URLSearchParams(window.location.search); if (p.get("qb_connected") === "true") { setQbConnected(true); setQbMessage({ text: "QuickBooks connected successfully!", ok: true }); window.history.replaceState({}, "", window.location.pathname); } if (p.get("qb_error")) { setQbMessage({ text: `QuickBooks connection failed: ${p.get("qb_error")}`, ok: false }); window.history.replaceState({}, "", window.location.pathname); } fetch("/api/qb/status").then(r => r.json()).then(d => setQbConnected(d.connected)).catch(() => {}); }, []);
 
