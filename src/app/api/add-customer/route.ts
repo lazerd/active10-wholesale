@@ -26,7 +26,7 @@ async function sendEmail(to: string, subject: string, html: string) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { name, email, phone, business, address, city, type } = await req.json();
+    const { name, email, phone, business, address, city, state, zip, type } = await req.json();
 
     if (!name || !email || !business || !city || !type) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -54,8 +54,12 @@ export async function POST(req: NextRequest) {
       user_id: authUser.user.id,
       name,
       email,
+      phone: phone || null,
       business,
+      address: address || null,
       city,
+      state: state || null,
+      zip: zip || null,
       type,
       status: "active",
     });

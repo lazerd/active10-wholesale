@@ -78,7 +78,9 @@ export async function POST(req: NextRequest) {
     if (type === "order") {
       const items = record.items || [];
 
-      const shippingAddress = [record.customer_address, record.customer_city].filter(Boolean).join(", ");
+      const cityStatePart = [record.customer_city, record.customer_state].filter(Boolean).join(", ");
+      const cityLine = [cityStatePart, record.customer_zip].filter(Boolean).join(" ");
+      const shippingAddress = [record.customer_address, cityLine].filter(Boolean).join(", ");
 
       const estWeight = estimateShippingWeight(items);
 
