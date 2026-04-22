@@ -88,8 +88,12 @@ export async function POST(req: NextRequest) {
         user_id: authUser.user.id,
         name: app.name,
         email: app.email,
+        phone: app.phone || null,
         business: app.business,
+        address: app.address || null,
         city: app.city,
+        state: app.state || null,
+        zip: app.zip || null,
         type: app.type,
         status: "active",
       });
