@@ -82,6 +82,10 @@ export default function App() {
   const [addCustError, setAddCustError] = useState("");
   const [custSearch, setCustSearch] = useState("");
   const [custSearchFocused, setCustSearchFocused] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState(false);
+  const [editCustForm, setEditCustForm] = useState({ name: "", email: "", phone: "", business: "", address: "", city: "", state: "", zip: "", type: "Chiropractor" });
+  const [editCustLoading, setEditCustLoading] = useState(false);
+  const [editCustError, setEditCustError] = useState("");
 
   // ── AUTH ─────────────────────────────────────────────────────────────────
   // FIX: Strip any Supabase error params (e.g. otp_expired) from the URL
@@ -165,7 +169,25 @@ const deleteCustomer = async (c: Customer) => { if (!confirm(`Delete ${c.name}? 
   const submitAddCustomer = async () => { if (addCustLoading) return; const f = addCustForm; if (!f.name || !f.email || !f.business || !f.city || !f.type) { setAddCustError("Please fill in all required fields."); return; } setAddCustLoading(true); setAddCustError(""); try { const r = await fetch("/api/add-customer", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: f.name, email: f.email.trim().toLowerCase(), phone: f.phone, business: f.business, address: f.address, city: f.city + (f.state ? ", " + f.state : "") + (f.zip ? " " + f.zip : ""), type: f.type }) }); const d = await r.json(); if (d.ok) { setAddingCustomer(false); setAddCustForm({ name: "", email: "", phone: "", business: "", address: "", city: "", state: "", zip: "", type: "Chiropractor" }); loadAdminData(); } else { setAddCustError(d.error || "Failed to add customer"); } } catch { setAddCustError("Something went wrong. Please try again."); } setAddCustLoading(false); };
 
   const exportCustomersCSV = () => { const en = customers.map(c => { const a = applications.find(x => x.email === c.email); return { Name: c.name, Email: c.email, Phone: c.phone || a?.phone || "", Business: c.business, Address: c.address || a?.address || "", City: c.city, Type: c.type, Status: c.status, "Total Orders": c.total_orders, "Total Spent": `$${c.total_spent.toFixed(2)}`, "Last Order": c.last_order_at ? new Date(c.last_order_at).toLocaleDateString() : "Never", "Member Since": new Date(c.created_at).toLocaleDateString() }; }); if (!en.length) return; const h = Object.keys(en[0]); const rows = [h.join(","), ...en.map(r => h.map(k => { const v = String((r as any)[k]).replace(/"/g, '""'); return v.includes(",") || v.includes('"') || v.includes("\n") ? `"${v}"` : v; }).join(","))]; const b = new Blob([rows.join("\n")], { type: "text/csv" }); const u = URL.createObjectURL(b); const a = document.createElement("a"); a.href = u; a.download = `active10-customers-${new Date().toISOString().split("T")[0]}.csv`; a.click(); URL.revokeObjectURL(u); };
-
+  const startEditCustomer = (c: Customer) => {
+    const parts = (c.city || "").split(",");
+    const cityName = parts[0]?.trim() || "";
+    const rest = (parts[1] || "").trim().split(" ");
+    setEditCustForm({ name: c.name, email: c.email, phone: c.phone || "", business: c.business, address: c.address || "", city: cityName, state: rest[0] || "", zip: rest[1] || "", type: c.type });
+    setEditingCustomer(true); setEditCustError("");
+  };
+  const cancelEditCustomer = () => { setEditingCustomer(false); setEditCustError(""); };
+  const saveEditCustomer = async () => {
+    if (!selectedCustomer || editCustLoading) return;
+    if (!editCustForm.name || !editCustForm.email || !editCustForm.business) { setEditCustError("Name, email, and business are required."); return; }
+    setEditCustLoading(true); setEditCustError("");
+    const cityFull = editCustForm.city + (editCustForm.state ? ", " + editCustForm.state : "") + (editCustForm.zip ? " " + editCustForm.zip : "");
+    const updates = { name: editCustForm.name, email: editCustForm.email, phone: editCustForm.phone, business: editCustForm.business, address: editCustForm.address, city: cityFull, type: editCustForm.type };
+    const { error } = await supabase.from("customers").update(updates).eq("id", selectedCustomer.id);
+    if (!error) { const updated = { ...selectedCustomer, ...updates }; setSelectedCustomer(updated); setCustomers(p => p.map(c => c.id === selectedCustomer.id ? updated : c)); setEditingCustomer(false); }
+    else { setEditCustError("Error: " + error.message); }
+    setEditCustLoading(false);
+  };
   const filtered = filter === "all" ? products : products.filter(p => p.cat === filter);
   const bg: React.CSSProperties = { minHeight: "100vh", background: `linear-gradient(165deg, ${BDP} 0%, ${BBG} 40%, ${BD} 100%)`, fontFamily: "'DM Sans', sans-serif", color: "white" };
   const fonts = <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,500;9..40,700&family=Playfair+Display:wght@600;800&display=swap" rel="stylesheet" />;
@@ -350,6 +372,7 @@ const deleteCustomer = async (c: Customer) => { if (!confirm(`Delete ${c.name}? 
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 {qbConnected && <button onClick={() => syncCustomerToQB(selectedCustomer.id)} disabled={!!selectedCustomer.qb_customer_id || qbLoading === `cust-${selectedCustomer.id}`} className="bh" style={{ padding: "8px 16px", borderRadius: 8, border: selectedCustomer.qb_customer_id ? "1px solid rgba(0,184,148,.3)" : `1px solid ${B}44`, background: selectedCustomer.qb_customer_id ? "rgba(0,184,148,.1)" : `${B}15`, color: selectedCustomer.qb_customer_id ? "#00B894" : BL, fontSize: 12, fontWeight: 600, cursor: selectedCustomer.qb_customer_id ? "default" : "pointer", opacity: qbLoading === `cust-${selectedCustomer.id}` ? 0.5 : 1 }}>{qbLoading === `cust-${selectedCustomer.id}` ? "..." : selectedCustomer.qb_customer_id ? "✓ In QB" : "📗 Send to QB"}</button>}
                 <div style={{ padding: "6px 14px", borderRadius: 8, background: selectedCustomer.status === "active" ? `${GR}22` : "rgba(255,160,64,.15)", color: selectedCustomer.status === "active" ? GR : "#FFA940", fontSize: 12, fontWeight: 600, textTransform: "capitalize" }}>{selectedCustomer.status}</div>
+                <button onClick={() => startEditCustomer(selectedCustomer)} className="bh" style={{ ...btnS, color: BL, borderColor: `${B}66` }}>✏️ Edit</button>
                 <button onClick={() => deleteCustomer(selectedCustomer)} style={btnD}>🗑 Delete</button>
               </div>
             </div>
