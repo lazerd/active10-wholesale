@@ -379,6 +379,27 @@ const deleteCustomer = async (c: Customer) => { if (!confirm(`Delete ${c.name}? 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 14, marginBottom: 20 }}>{[{ i: "📧", l: "Email", v: selectedCustomer.email, c: BL }, { i: "📱", l: "Phone", v: ph, c: "rgba(255,255,255,.8)" }, { i: "📍", l: "Address", v: ad ? `${ad}, ${selectedCustomer.city}` : selectedCustomer.city, c: "rgba(255,255,255,.8)" }, { i: "🏥", l: "Type", v: selectedCustomer.type, c: "rgba(255,255,255,.8)" }].map((f, i) => <div key={i} style={{ background: "rgba(255,255,255,.03)", borderRadius: 12, padding: "14px 16px" }}><div style={{ fontSize: 11, color: "rgba(255,255,255,.35)", textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 6 }}>{f.i} {f.l}</div><div style={{ fontSize: 14, fontWeight: 500, color: f.c, wordBreak: "break-all" }}>{f.v}</div></div>)}</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 14 }}>{[{ l: "Total Spent", v: `$${selectedCustomer.total_spent.toLocaleString()}`, c: "#E8C76A" }, { l: "Orders", v: selectedCustomer.total_orders, c: BL }, { l: "Since", v: new Date(selectedCustomer.created_at).toLocaleDateString(), c: "rgba(255,255,255,.7)" }, { l: "Last Order", v: selectedCustomer.last_order_at ? new Date(selectedCustomer.last_order_at).toLocaleDateString() : "Never", c: GR }].map((s, i) => <div key={i} style={{ background: "rgba(255,255,255,.03)", borderRadius: 12, padding: "14px 16px" }}><div style={{ fontSize: 11, color: "rgba(255,255,255,.35)", textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 4 }}>{s.l}</div><div style={{ fontSize: 18, fontWeight: 700, color: s.c }}>{s.v}</div></div>)}</div>
           </div>
+          {editingCustomer && (
+              <div style={{ marginTop: 24, paddingTop: 24, borderTop: `1px solid ${B}33`, animation: "su .3s ease" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+                  <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: BL }}>✏️ Edit Customer</h3>
+                  <button onClick={cancelEditCustomer} style={{ background: "none", border: "none", color: "rgba(255,255,255,.4)", fontSize: 20, cursor: "pointer" }}>×</button>
+                </div>
+                {editCustError && <div style={{ background: "rgba(255,80,80,.1)", border: "1px solid rgba(255,80,80,.3)", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#FF6B6B" }}>{editCustError}</div>}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                  {[{ l: "Full Name *", k: "name" }, { l: "Practice Name *", k: "business" }, { l: "Email *", k: "email" }, { l: "Phone", k: "phone" }, { l: "Street Address", k: "address" }, { l: "City", k: "city" }, { l: "State", k: "state" }, { l: "Zip Code", k: "zip" }].map(f => (
+                    <div key={f.k}><label style={{ display: "block", color: "rgba(255,255,255,.5)", fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: ".8px" }}>{f.l}</label>
+                    <input value={(editCustForm as any)[f.k]} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditCustForm(p => ({ ...p, [f.k]: e.target.value }))} style={inp} /></div>
+                  ))}
+                  <div><label style={{ display: "block", color: "rgba(255,255,255,.5)", fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: ".8px" }}>Type</label>
+                  <select value={editCustForm.type} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setEditCustForm(p => ({ ...p, type: e.target.value }))} style={{ ...inp, color: "rgba(255,255,255,.7)" }}><option>Chiropractor</option><option>Physical Therapy</option><option>Massage Therapy</option><option>Medical Doctor</option><option>Other</option></select></div>
+                </div>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
+                  <button onClick={cancelEditCustomer} style={btnS}>Cancel</button>
+                  <button onClick={saveEditCustomer} disabled={editCustLoading} className="bh" style={{ ...btnP, opacity: editCustLoading ? 0.5 : 1 }}>{editCustLoading ? "Saving..." : "Save Changes"}</button>
+                </div>
+              </div>
+            )}
           <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>Orders ({co.length})</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{co.map((o, i) => renderOrdRow(o, i))}{co.length === 0 && <div style={{ textAlign: "center", padding: 30, color: "rgba(255,255,255,.3)" }}>No orders</div>}</div>
         </div>); })()}
