@@ -78,22 +78,7 @@ export async function POST(req: NextRequest) {
     if (type === "order") {
       const items = record.items || [];
 
-      let shippingAddress = "";
-      try {
-        const supabase = createClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.SUPABASE_SERVICE_ROLE_KEY!
-        );
-        const { data: customer } = await supabase
-          .from("customers")
-          .select("address, city")
-          .eq("id", record.customer_id)
-          .single();
-        if (customer) {
-          const parts = [customer.address, customer.city].filter(Boolean);
-          shippingAddress = parts.join(", ");
-        }
-      } catch {}
+      const shippingAddress = [record.customer_address, record.customer_city].filter(Boolean).join(", ");
 
       const estWeight = estimateShippingWeight(items);
 
