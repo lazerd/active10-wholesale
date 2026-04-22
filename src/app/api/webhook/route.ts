@@ -86,11 +86,11 @@ export async function POST(req: NextRequest) {
         );
         const { data: customer } = await supabase
           .from("customers")
-          .select("address, city, state, zip")
+          .select("address, city")
           .eq("id", record.customer_id)
           .single();
         if (customer) {
-          const parts = [customer.address, customer.city, customer.state, customer.zip].filter(Boolean);
+          const parts = [customer.address, customer.city].filter(Boolean);
           shippingAddress = parts.join(", ");
         }
       } catch {}
