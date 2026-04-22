@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
 
@@ -53,6 +54,25 @@ export async function POST(req: NextRequest) {
 
     if (type === "order") {
       const items = record.items || [];
+
+      // Fetch shipping address from customers table
+      let shippingAddress = "";
+      try {
+        const supabase = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.SUPABASE_SERVICE_ROLE_KEY!
+        );
+        const { data: customer } = await supabase
+          .from("customers")
+          .select("address, city, state, zip")
+          .eq("id", record.customer_id)
+          .single();
+        if (customer) {
+          const parts = [customer.address, customer.city, customer.state, customer.zip].filter(Boolean);
+          shippingAddress = parts.join(", ");
+        }
+      } catch {}
+
       const SKU_MAP: Record<string, string> = {
         "original-jar-2oz": "001",
         "original-pump-8oz": "004",
@@ -82,6 +102,7 @@ export async function POST(req: NextRequest) {
           <table style="border-collapse:collapse;width:100%;margin-bottom:20px">
             <tr><td style="padding:10px;font-weight:bold;border-bottom:1px solid #eee;width:120px">Customer</td><td style="padding:10px;border-bottom:1px solid #eee">${record.customer_name}</td></tr>
             <tr><td style="padding:10px;font-weight:bold;border-bottom:1px solid #eee">Email</td><td style="padding:10px;border-bottom:1px solid #eee">${record.customer_email}</td></tr>
+            ${shippingAddress ? `<tr><td style="padding:10px;font-weight:bold;border-bottom:1px solid #eee;color:#0072BC">📦 Ship To</td><td style="padding:10px;border-bottom:1px solid #eee;font-weight:600;color:#0072BC">${shippingAddress}</td></tr>` : ""}
             <tr><td style="padding:10px;font-weight:bold;border-bottom:1px solid #eee">Tier</td><td style="padding:10px;border-bottom:1px solid #eee">${record.tier_name}</td></tr>
             <tr><td style="padding:10px;font-weight:bold;border-bottom:1px solid #eee">Payment</td><td style="padding:10px;border-bottom:1px solid #eee">${record.pay_method === "card" ? "Credit Card" : "Check"}</td></tr>
             ${record.notes ? `<tr><td style="padding:10px;font-weight:bold;border-bottom:1px solid #eee">Notes</td><td style="padding:10px;border-bottom:1px solid #eee">${record.notes}</td></tr>` : ""}
