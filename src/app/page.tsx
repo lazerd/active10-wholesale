@@ -54,6 +54,7 @@ export default function App() {
   const [anim, setAnim] = useState<string | null>(null);
   const [adminTab, setAdminTab] = useState("customers");
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [customerSearch, setCustomerSearch] = useState("");
   const [appSubmitted, setAppSubmitted] = useState(false);
   const [showPw, setShowPw] = useState(false);
   const [payMethod, setPayMethod] = useState("check");
@@ -363,8 +364,14 @@ const submitManualOrder = async () => { if (!manualCustomerId) { alert("Select a
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}><button onClick={() => setAddingCustomer(false)} style={btnS}>Cancel</button><button onClick={submitAddCustomer} disabled={addCustLoading} className="bh" style={{ ...btnP, opacity: addCustLoading ? 0.5 : 1 }}>{addCustLoading ? "Adding..." : "Add Customer"}</button></div>
             <p style={{ fontSize: 12, color: "rgba(255,255,255,.35)", marginTop: 12 }}>A welcome email with login credentials will be sent to the customer.</p>
           </div>)}
+          <div style={{ position: "relative", marginBottom: 14 }}>
+            <input value={customerSearch} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCustomerSearch(e.target.value)} placeholder="🔍  Search by name, business, email, or city..." style={{ ...inp, fontSize: 14, paddingRight: customerSearch ? 40 : 14 }} />
+            {customerSearch && <button onClick={() => setCustomerSearch("")} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "rgba(255,255,255,.5)", fontSize: 18, cursor: "pointer", padding: "0 6px" }} aria-label="Clear search">×</button>}
+          </div>
+          {(() => { const q = customerSearch.trim().toLowerCase(); const filtered = q ? customers.filter(c => [c.name, c.business, c.email, c.city, c.phone].some(f => (f || "").toLowerCase().includes(q))) : customers; return (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{customers.length === 0 && <div style={{ textAlign: "center", padding: 40, color: "rgba(255,255,255,.4)" }}>No customers yet</div>}
-            {customers.map((c, i) => (<div key={c.id} style={{ background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 14, padding: "18px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", transition: "all .2s", animation: `su .4s ease ${i * .05}s both` }} onMouseOver={(e: React.MouseEvent<HTMLDivElement>) => e.currentTarget.style.borderColor = `${B}55`} onMouseOut={(e: React.MouseEvent<HTMLDivElement>) => e.currentTarget.style.borderColor = `${B}22`}>
+            {customers.length > 0 && filtered.length === 0 && <div style={{ textAlign: "center", padding: 40, color: "rgba(255,255,255,.4)" }}>No customers match &ldquo;{customerSearch}&rdquo;</div>}
+            {filtered.map((c, i) => (<div key={c.id} style={{ background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 14, padding: "18px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", transition: "all .2s", animation: `su .4s ease ${i * .05}s both` }} onMouseOver={(e: React.MouseEvent<HTMLDivElement>) => e.currentTarget.style.borderColor = `${B}55`} onMouseOut={(e: React.MouseEvent<HTMLDivElement>) => e.currentTarget.style.borderColor = `${B}22`}>
               <div onClick={() => setSelectedCustomer(c)} style={{ display: "flex", alignItems: "center", gap: 16, flex: 1 }}><div style={{ width: 44, height: 44, borderRadius: 12, background: `${B}22`, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 16, color: BL }}>{c.name.split(" ").map(n => n[0]).join("").slice(0, 2)}</div><div><div style={{ fontWeight: 700, fontSize: 15 }}>{c.name}</div><div style={{ fontSize: 12, color: "rgba(255,255,255,.45)" }}>{c.business} · {c.city}</div></div></div>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 {qbConnected && <button onClick={e => { e.stopPropagation(); syncCustomerToQB(c.id); }} disabled={!!c.qb_customer_id || qbLoading === `cust-${c.id}`} style={{ padding: "4px 10px", borderRadius: 6, border: c.qb_customer_id ? "1px solid rgba(0,184,148,.3)" : `1px solid ${B}44`, background: c.qb_customer_id ? "rgba(0,184,148,.1)" : `${B}15`, color: c.qb_customer_id ? "#00B894" : BL, fontSize: 11, fontWeight: 600, cursor: c.qb_customer_id ? "default" : "pointer", opacity: qbLoading === `cust-${c.id}` ? 0.5 : 1, whiteSpace: "nowrap" }}>{qbLoading === `cust-${c.id}` ? "..." : c.qb_customer_id ? "✓ In QB" : "→ QB"}</button>}
@@ -372,6 +379,7 @@ const submitManualOrder = async () => { if (!manualCustomerId) { alert("Select a
               </div>
             </div>))}
           </div>
+          ); })()}
         </div>)}
 
         {adminTab === "customers" && selectedCustomer && (() => { const ap = applications.find(a => a.email === selectedCustomer.email); const ph = selectedCustomer.phone || ap?.phone || "—"; const ad = selectedCustomer.address || ap?.address || ""; const co = orders.filter(o => o.customer_id === selectedCustomer.id); return (<div style={{ animation: "su .4s ease" }}>
