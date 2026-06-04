@@ -113,7 +113,9 @@ export async function POST(req: NextRequest) {
             <tr><td style="padding:10px;font-weight:bold;border-bottom:1px solid #eee">Email</td><td style="padding:10px;border-bottom:1px solid #eee">${record.customer_email}</td></tr>
             ${shippingAddress ? `<tr><td style="padding:10px;font-weight:bold;border-bottom:1px solid #eee;color:#0072BC">📦 Ship To</td><td style="padding:10px;border-bottom:1px solid #eee;font-weight:600;color:#0072BC">${shippingAddress}</td></tr>` : ""}
             <tr><td style="padding:10px;font-weight:bold;border-bottom:1px solid #eee">Tier</td><td style="padding:10px;border-bottom:1px solid #eee">${record.tier_name}</td></tr>
-            <tr><td style="padding:10px;font-weight:bold;border-bottom:1px solid #eee">Payment</td><td style="padding:10px;border-bottom:1px solid #eee">${record.pay_method === "card" ? "Credit Card" : "Check"}</td></tr>
+            <tr><td style="padding:10px;font-weight:bold;border-bottom:1px solid #eee">Payment</td><td style="padding:10px;border-bottom:1px solid #eee">${record.pay_method === "card" ? "Credit Card" : record.pay_method === "ach" ? "ACH Transfer" : "Check"}</td></tr>
+            ${record.discount_code ? `<tr><td style="padding:10px;font-weight:bold;border-bottom:1px solid #eee;color:#00B894">🎟️ Promo Code</td><td style="padding:10px;border-bottom:1px solid #eee;font-weight:700;color:#00B894">${record.discount_code} — 20% off</td></tr>` : ""}
+            ${record.free_shipping ? `<tr><td style="padding:10px;font-weight:bold;border-bottom:1px solid #eee;color:#00B894">🚚 Shipping</td><td style="padding:10px;border-bottom:1px solid #eee;font-weight:700;color:#00B894">FREE — do not add a shipping charge</td></tr>` : ""}
             <tr><td style="padding:10px;font-weight:bold;border-bottom:1px solid #eee">⚖️ Est. Weight</td><td style="padding:10px;border-bottom:1px solid #eee;font-weight:600">${estWeight}</td></tr>
             ${record.notes ? `<tr><td style="padding:10px;font-weight:bold;border-bottom:1px solid #eee">Notes</td><td style="padding:10px;border-bottom:1px solid #eee">${record.notes}</td></tr>` : ""}
           </table>

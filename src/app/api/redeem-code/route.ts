@@ -1,0 +1,53 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+// Single live promo code. 20% off + free shipping, one redemption per customer.
+const CODE = "DCAMEMBERSONLY";
+const CODE_DISCOUNT = 0.2;
+
+// A customer has used the code if any prior order carries the marker. We write
+// the code into both `tier_name` and `notes` at order time (no dedicated column
+// exists on the orders table), so we look in both places to be safe.
+async function hasUsedCode(customerId: string) {
+  const { data, error } = await supabaseAdmin
+    .from("orders")
+    .select("id")
+    .eq("customer_id", customerId)
+    .or(`tier_name.ilike.%${CODE}%,notes.ilike.%${CODE}%`)
+    .limit(1);
+  if (error) throw new Error(error.message);
+  return (data?.length || 0) > 0;
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const { customerId, code } = await req.json();
+
+    if (!customerId) {
+      return NextResponse.json({ ok: false, error: "Missing customer." }, { status: 400 });
+    }
+    if (!code || String(code).trim().toUpperCase() !== CODE) {
+      return NextResponse.json({ ok: false, error: "Invalid discount code." });
+    }
+
+    if (await hasUsedCode(customerId)) {
+      return NextResponse.json({ ok: false, alreadyUsed: true, error: "This code has already been used on your account." });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      code: CODE,
+      discount: CODE_DISCOUNT,
+      freeShipping: true,
+      message: "Code applied! 20% off + free shipping.",
+    });
+  } catch (err: any) {
+    console.error("redeem-code error:", err);
+    return NextResponse.json({ ok: false, error: "Could not validate code. Please try again." }, { status: 500 });
+  }
+}

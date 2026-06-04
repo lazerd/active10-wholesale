@@ -20,6 +20,10 @@ function getTier(s: number) {
 const ws = (r: number) => Math.round(r * 0.5 * 100) / 100;
 const fp = (r: number, d: number) => Math.round(ws(r) * (1 - d) * 100) / 100;
 
+// Promo code: 20% off + free shipping, one redemption per customer (enforced server-side).
+const PROMO_CODE = "DCAMEMBERSONLY";
+const PROMO_DISCOUNT = 0.2;
+
 const Img = ({ src, alt, color, style }: { src: string; alt: string; color: string; style?: React.CSSProperties }) => {
   const [err, setErr] = useState(false);
   if (err) return <div style={{ ...style, background: color || "#f0ece8", display: "flex", alignItems: "center", justifyContent: "center", color: B, fontWeight: 700, fontSize: 13, textAlign: "center", padding: 8 }}>{alt}</div>;
@@ -49,6 +53,10 @@ export default function App() {
   const [loginError, setLoginError] = useState("");
   const [authView, setAuthView] = useState("login");
   const [orderNote, setOrderNote] = useState("");
+  const [codeInput, setCodeInput] = useState("");
+  const [appliedCode, setAppliedCode] = useState("");
+  const [codeMsg, setCodeMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  const [codeChecking, setCodeChecking] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(false);
   const [orderSubmitting, setOrderSubmitting] = useState(false);
   const [anim, setAnim] = useState<string | null>(null);
@@ -133,20 +141,61 @@ export default function App() {
   const items = Object.entries(cart).filter(([, q]) => q > 0);
   const wsSub = items.reduce((s, [id, q]) => s + (products.find(p => p.id === id)?.retail || 0) * 0.5 * q, 0);
   const tier = getTier(wsSub);
-  const total = items.reduce((s, [id, q]) => { const p = products.find(p => p.id === id); return s + (p ? fp(p.retail, tier.disc) * q : 0); }, 0);
+  // When the promo code is applied the customer gets the better of their tier
+  // discount or the flat 20% code discount, plus free shipping.
+  const codeDisc = appliedCode ? PROMO_DISCOUNT : 0;
+  const effDisc = Math.max(tier.disc, codeDisc);
+  const codeBeatsTier = appliedCode && codeDisc > tier.disc;
+  const total = items.reduce((s, [id, q]) => { const p = products.find(p => p.id === id); return s + (p ? fp(p.retail, effDisc) * q : 0); }, 0);
   const count = items.reduce((s, [, q]) => s + q, 0);
-  const save = items.reduce((s, [id, q]) => { const p = products.find(p => p.id === id); return s + (p ? (p.retail - fp(p.retail, tier.disc)) * q : 0); }, 0);
+  const save = items.reduce((s, [id, q]) => { const p = products.find(p => p.id === id); return s + (p ? (p.retail - fp(p.retail, effDisc)) * q : 0); }, 0);
   const add = (id: string, d: number) => { setAnim(id); setTimeout(() => setAnim(null), 300); setCart(p => ({ ...p, [id]: Math.max(0, (p[id] || 0) + d) })); };
   const setQtyFn = (id: string, q: number) => setCart(p => ({ ...p, [id]: Math.max(0, q) }));
 
   const changePassword = async () => { if (newPw.length < 6) { setPwMsg("Password must be at least 6 characters."); return; } const { error } = await supabase.auth.updateUser({ password: newPw }); if (!error) { setPwMsg("Password updated!"); setNewPw(""); setTimeout(() => { setShowChangePw(false); setPwMsg(""); }, 2000); } else setPwMsg("Error: " + error.message); };
   const forgotPassword = async () => { if (!resetEmail) { setResetMsg("Enter your email."); return; } const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, { redirectTo: "https://wholesale.getactive10.com" }); if (!error) setResetMsg("Reset link sent! Check your inbox."); else setResetMsg("Error: " + error.message); };
   const login = async () => { setLoginError(""); const e = loginForm.email.trim().toLowerCase(), p = loginForm.password.trim(); if (!e || !p) { setLoginError("Please enter your credentials."); return; } const { error } = await supabase.auth.signInWithPassword({ email: e, password: p }); if (error) setLoginError(error.message === "Invalid login credentials" ? "Invalid email or password." : error.message); };
-  const logout = async () => { await supabase.auth.signOut(); setSession(null); setIsAdmin(false); setCustomer(null); setLoginForm({ email: "", password: "" }); setView("shop"); setCart({}); setSelectedCustomer(null); };
+  const logout = async () => { await supabase.auth.signOut(); setSession(null); setIsAdmin(false); setCustomer(null); setLoginForm({ email: "", password: "" }); setView("shop"); setCart({}); setSelectedCustomer(null); setAppliedCode(""); setCodeInput(""); setCodeMsg(null); };
 
   const submitApplication = async () => { const r = { name: appForm.name, email: appForm.email, phone: appForm.phone, business: appForm.business, address: appForm.address, city: appForm.city, state: appForm.state, zip: appForm.zip, type: appForm.type }; const { error } = await supabase.from("applications").insert(r); if (!error) { setAppSubmitted(true); fetch("/api/webhook", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "application", record: r }) }).catch(() => {}); } };
 
-  const submitOrder = async () => { if (!customer || orderSubmitting) return; setOrderSubmitting(true); const oi: OrderItem[] = items.map(([id, q]) => { const p = products.find(p => p.id === id)!; const up = fp(p.retail, tier.disc); return { product_id: id, name: p.name, qty: q, unit_price: up, line_total: up * q }; }); const cf = processingFee(total, payMethod); const { data, error } = await supabase.from("orders").insert({ order_number: "", customer_id: customer.id, customer_name: customer.name, customer_email: customer.email, items: oi, subtotal: Math.round(wsSub * 100) / 100, tier_name: tier.name, tier_discount: tier.disc, discount_amount: Math.round((wsSub - total) * 100) / 100, cc_fee: cf, total: Math.round((total + cf) * 100) / 100, pay_method: payMethod, notes: orderNote || null }).select().single(); setOrderSubmitting(false); if (!error && data) { setOrderSuccess(true); fetch("/api/webhook", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "order", record: { ...data, customer_address: customer.address, customer_city: customer.city, customer_state: customer.state, customer_zip: customer.zip } }) }).catch(() => {}); } else alert("Failed to submit order."); };
+  const applyCode = async () => {
+    if (!customer || codeChecking) return;
+    const code = codeInput.trim();
+    if (!code) { setCodeMsg({ text: "Enter a code.", ok: false }); return; }
+    setCodeChecking(true); setCodeMsg(null);
+    try {
+      const r = await fetch("/api/redeem-code", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ customerId: customer.id, code }) });
+      const d = await r.json();
+      if (d.ok) { setAppliedCode(PROMO_CODE); setCodeMsg({ text: d.message || "Code applied!", ok: true }); }
+      else { setAppliedCode(""); setCodeMsg({ text: d.error || "Invalid code.", ok: false }); }
+    } catch { setCodeMsg({ text: "Could not validate code. Try again.", ok: false }); }
+    setCodeChecking(false);
+  };
+  const removeCode = () => { setAppliedCode(""); setCodeInput(""); setCodeMsg(null); };
+
+  const submitOrder = async () => {
+    if (!customer || orderSubmitting) return;
+    setOrderSubmitting(true);
+    // Re-validate the promo code at submit time so a stale/duplicate redemption
+    // can't slip through (one-time-use is enforced server-side).
+    let useCode = appliedCode;
+    if (appliedCode) {
+      try {
+        const r = await fetch("/api/redeem-code", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ customerId: customer.id, code: appliedCode }) });
+        const d = await r.json();
+        if (!d.ok) { useCode = ""; setAppliedCode(""); setCodeMsg({ text: d.error || "Code no longer valid.", ok: false }); setOrderSubmitting(false); return; }
+      } catch { setOrderSubmitting(false); alert("Could not verify your discount code. Please try again."); return; }
+    }
+    const oi: OrderItem[] = items.map(([id, q]) => { const p = products.find(p => p.id === id)!; const up = fp(p.retail, effDisc); return { product_id: id, name: p.name, qty: q, unit_price: up, line_total: up * q }; });
+    const cf = processingFee(total, payMethod);
+    const tierName = useCode ? (codeBeatsTier ? PROMO_CODE : `${tier.name} + ${PROMO_CODE}`) : tier.name;
+    const notes = useCode ? `🎟️ ${PROMO_CODE} — 20% off + FREE SHIPPING${orderNote ? ` · ${orderNote}` : ""}` : (orderNote || null);
+    const { data, error } = await supabase.from("orders").insert({ order_number: "", customer_id: customer.id, customer_name: customer.name, customer_email: customer.email, items: oi, subtotal: Math.round(wsSub * 100) / 100, tier_name: tierName, tier_discount: effDisc, discount_amount: Math.round((wsSub - total) * 100) / 100, cc_fee: cf, total: Math.round((total + cf) * 100) / 100, pay_method: payMethod, notes }).select().single();
+    setOrderSubmitting(false);
+    if (!error && data) { setOrderSuccess(true); fetch("/api/webhook", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "order", record: { ...data, discount_code: useCode || null, free_shipping: !!useCode, customer_address: customer.address, customer_city: customer.city, customer_state: customer.state, customer_zip: customer.zip } }) }).catch(() => {}); }
+    else alert("Failed to submit order.");
+  };
 
   const approveApp = async (id: string) => { const r = await fetch("/api/approve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ applicationId: id, action: "approve" }) }); const d = await r.json(); if (d.ok) { setApplications(p => p.map(a => a.id === id ? { ...a, status: "approved" } : a)); loadAdminData(); } else alert("Error: " + (d.error || "Failed")); };
   const rejectApp = async (id: string) => { const r = await fetch("/api/approve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ applicationId: id, action: "reject" }) }); const d = await r.json(); if (d.ok) setApplications(p => p.map(a => a.id === id ? { ...a, status: "rejected" } : a)); else alert("Error: " + (d.error || "Failed")); };
@@ -211,7 +260,7 @@ const submitManualOrder = async () => { if (!manualCustomerId) { alert("Select a
 
   if (loading) return (<div style={{ ...bg, display: "flex", alignItems: "center", justifyContent: "center" }}>{fonts}{css}<div style={{ textAlign: "center", animation: "su .5s ease" }}><div style={{ width: 48, height: 48, borderRadius: 12, background: `linear-gradient(135deg,${B},${BL})`, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 18, color: "white", margin: "0 auto 16px" }}>A10</div><p style={{ color: "rgba(255,255,255,.5)", fontSize: 14 }}>Loading...</p></div></div>);
 
-  if (orderSuccess) return (<div style={{ ...bg, display: "flex", alignItems: "center", justifyContent: "center" }}>{fonts}{css}<div style={{ textAlign: "center", padding: 40, maxWidth: 500, animation: "su .5s ease" }}><div style={{ width: 80, height: 80, borderRadius: "50%", background: `linear-gradient(135deg,${GR},#00D2A0)`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px", fontSize: 36 }}>✓</div><h1 style={{ fontFamily: "'Playfair Display',serif", fontSize: 32, marginBottom: 12 }}>Order Submitted!</h1><p style={{ color: "rgba(255,255,255,.7)", fontSize: 16, lineHeight: 1.6, marginBottom: 32 }}>Your wholesale order has been sent to Active Formulations.</p><button onClick={() => { setOrderSuccess(false); setCart({}); setView("shop"); }} className="bh" style={{ ...btnP, padding: "14px 32px", fontSize: 15, fontWeight: 700 }}>Continue Shopping</button></div></div>);
+  if (orderSuccess) return (<div style={{ ...bg, display: "flex", alignItems: "center", justifyContent: "center" }}>{fonts}{css}<div style={{ textAlign: "center", padding: 40, maxWidth: 500, animation: "su .5s ease" }}><div style={{ width: 80, height: 80, borderRadius: "50%", background: `linear-gradient(135deg,${GR},#00D2A0)`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px", fontSize: 36 }}>✓</div><h1 style={{ fontFamily: "'Playfair Display',serif", fontSize: 32, marginBottom: 12 }}>Order Submitted!</h1><p style={{ color: "rgba(255,255,255,.7)", fontSize: 16, lineHeight: 1.6, marginBottom: 32 }}>Your wholesale order has been sent to Active Formulations.</p><button onClick={() => { setOrderSuccess(false); setCart({}); setView("shop"); setAppliedCode(""); setCodeInput(""); setCodeMsg(null); }} className="bh" style={{ ...btnP, padding: "14px 32px", fontSize: 15, fontWeight: 700 }}>Continue Shopping</button></div></div>);
 
   // LOGIN
   if (!session) return (
@@ -452,19 +501,35 @@ const submitManualOrder = async () => { if (!manualCustomerId) { alert("Select a
       {view === "cart" && <div style={{ maxWidth: 700, margin: "0 auto", animation: "su .4s ease" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}><h2 style={{ fontFamily: "'Playfair Display',serif", fontSize: 28 }}>Your Order</h2><button onClick={() => setView("shop")} style={btnS}>← Shopping</button></div>
         {items.length === 0 ? <div style={{ textAlign: "center", padding: 60, background: "rgba(255,255,255,.03)", borderRadius: 16, border: `1px solid ${B}22` }}><p style={{ fontSize: 40, marginBottom: 12 }}>🛒</p><p style={{ color: "rgba(255,255,255,.5)" }}>Cart is empty</p><button onClick={() => setView("shop")} className="bh" style={{ ...btnP, marginTop: 20 }}>Browse Products</button></div> : <>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>{items.map(([id, q]) => { const p = products.find(x => x.id === id); if (!p) return null; const f = fp(p.retail, tier.disc); return (<div key={id} style={{ display: "flex", alignItems: "center", gap: 14, background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 14, padding: 14 }}><div style={{ width: 56, height: 56, borderRadius: 10, background: p.color, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}><Img src={p.img} alt={p.name} color={p.color} style={{ maxWidth: "75%", maxHeight: "75%", objectFit: "contain" }} /></div><div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 600, fontSize: 14 }}>{p.name}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,.4)" }}>{p.subtitle}</div><div style={{ fontSize: 13, color: BL, fontWeight: 600, marginTop: 2 }}>${f.toFixed(2)} ea</div></div><div style={{ display: "flex", alignItems: "center", gap: 6 }}><button onClick={() => add(id, -1)} className="bh" style={{ width: 30, height: 30, borderRadius: 7, border: "none", background: "rgba(255,255,255,.08)", color: "white", fontSize: 15, cursor: "pointer" }}>−</button><span style={{ fontWeight: 700, fontSize: 15, minWidth: 20, textAlign: "center" }}>{q}</span><button onClick={() => add(id, 1)} className="bh" style={{ width: 30, height: 30, borderRadius: 7, border: "none", background: `${B}33`, color: BL, fontSize: 15, cursor: "pointer" }}>+</button></div><div style={{ fontWeight: 700, fontSize: 15, minWidth: 65, textAlign: "right" }}>${(f * q).toFixed(2)}</div></div>); })}</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>{items.map(([id, q]) => { const p = products.find(x => x.id === id); if (!p) return null; const f = fp(p.retail, effDisc); return (<div key={id} style={{ display: "flex", alignItems: "center", gap: 14, background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 14, padding: 14 }}><div style={{ width: 56, height: 56, borderRadius: 10, background: p.color, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}><Img src={p.img} alt={p.name} color={p.color} style={{ maxWidth: "75%", maxHeight: "75%", objectFit: "contain" }} /></div><div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 600, fontSize: 14 }}>{p.name}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,.4)" }}>{p.subtitle}</div><div style={{ fontSize: 13, color: BL, fontWeight: 600, marginTop: 2 }}>${f.toFixed(2)} ea</div></div><div style={{ display: "flex", alignItems: "center", gap: 6 }}><button onClick={() => add(id, -1)} className="bh" style={{ width: 30, height: 30, borderRadius: 7, border: "none", background: "rgba(255,255,255,.08)", color: "white", fontSize: 15, cursor: "pointer" }}>−</button><span style={{ fontWeight: 700, fontSize: 15, minWidth: 20, textAlign: "center" }}>{q}</span><button onClick={() => add(id, 1)} className="bh" style={{ width: 30, height: 30, borderRadius: 7, border: "none", background: `${B}33`, color: BL, fontSize: 15, cursor: "pointer" }}>+</button></div><div style={{ fontWeight: 700, fontSize: 15, minWidth: 65, textAlign: "right" }}>${(f * q).toFixed(2)}</div></div>); })}</div>
           <div style={{ marginBottom: 20 }}><label style={{ display: "block", fontSize: 11, color: "rgba(255,255,255,.4)", marginBottom: 6, textTransform: "uppercase", letterSpacing: ".8px" }}>Order Notes</label><textarea value={orderNote} onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setOrderNote(e.target.value)} placeholder="Special instructions..." rows={2} style={{ ...inp, resize: "vertical", fontFamily: "inherit" }} /></div>
+          <div style={{ background: "rgba(255,255,255,.03)", border: `1px solid ${appliedCode ? GR : B}22`, borderRadius: 16, padding: 22, marginBottom: 16 }}>
+            <label style={{ display: "block", fontSize: 11, color: "rgba(255,255,255,.4)", marginBottom: 12, textTransform: "uppercase", letterSpacing: ".8px" }}>Discount Code</label>
+            {appliedCode ? (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 16px", background: `${GR}15`, border: `1px solid ${GR}44`, borderRadius: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontSize: 18 }}>🎟️</span><div><div style={{ fontWeight: 700, fontSize: 14, color: GR, letterSpacing: ".5px" }}>{appliedCode}</div><div style={{ fontSize: 12, color: "rgba(255,255,255,.5)" }}>20% off + free shipping applied</div></div></div>
+                <button onClick={removeCode} style={{ background: "none", border: "none", color: "rgba(255,255,255,.4)", fontSize: 13, cursor: "pointer", textDecoration: "underline" }}>Remove</button>
+              </div>
+            ) : (
+              <div style={{ display: "flex", gap: 8 }}>
+                <input value={codeInput} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCodeInput(e.target.value.toUpperCase())} onKeyDown={(e: React.KeyboardEvent) => e.key === "Enter" && applyCode()} placeholder="Enter code" style={{ ...inp, flex: 1, letterSpacing: ".5px" }} />
+                <button onClick={applyCode} disabled={codeChecking} className="bh" style={{ ...btnP, whiteSpace: "nowrap", opacity: codeChecking ? 0.5 : 1 }}>{codeChecking ? "Checking..." : "Apply"}</button>
+              </div>
+            )}
+            {codeMsg && <div style={{ marginTop: 10, fontSize: 13, color: codeMsg.ok ? GR : "#FF6B6B" }}>{codeMsg.ok ? "✓ " : "✕ "}{codeMsg.text}</div>}
+          </div>
           <div style={{ background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 16, padding: 22, marginBottom: 16 }}><label style={{ display: "block", fontSize: 11, color: "rgba(255,255,255,.4)", marginBottom: 12, textTransform: "uppercase", letterSpacing: ".8px" }}>Payment Method</label><div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{[{ v: "check", l: "Pay by Check", s: "No additional fees" }, { v: "card", l: "Pay by Credit Card", s: "2.99% processing fee" }, { v: "ach", l: "Pay by ACH Transfer", s: "1% processing fee" }].map(pm => <label key={pm.v} onClick={() => setPayMethod(pm.v)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", borderRadius: 12, border: payMethod === pm.v ? `2px solid ${BL}` : `1px solid ${B}33`, background: payMethod === pm.v ? `${B}15` : "transparent", cursor: "pointer", transition: "all .2s" }}><div style={{ width: 22, height: 22, borderRadius: "50%", border: payMethod === pm.v ? `2px solid ${BL}` : "2px solid rgba(255,255,255,.2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{payMethod === pm.v && <div style={{ width: 12, height: 12, borderRadius: "50%", background: BL }} />}</div><div><div style={{ fontWeight: 600, fontSize: 14 }}>{pm.l}</div><div style={{ fontSize: 12, color: "rgba(255,255,255,.4)", marginTop: 2 }}>{pm.s}</div></div></label>)}</div></div>
           <div style={{ background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 16, padding: 22, marginBottom: 16 }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14 }}><span style={{ color: "rgba(255,255,255,.5)" }}>Retail</span><span style={{ textDecoration: "line-through", color: "rgba(255,255,255,.3)" }}>${items.reduce((s, [id, q]) => s + (products.find(p => p.id === id)?.retail || 0) * q, 0).toFixed(2)}</span></div>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14 }}><span style={{ color: "rgba(255,255,255,.5)" }}>Wholesale (50%)</span><span>${wsSub.toFixed(2)}</span></div>
-            {tier.disc > 0 && <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14 }}><span style={{ color: GR }}>{tier.name} ({(tier.disc * 100).toFixed(0)}% off)</span><span style={{ color: GR }}>-${(wsSub - total).toFixed(2)}</span></div>}
+            {effDisc > 0 && <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14 }}><span style={{ color: GR }}>{codeBeatsTier ? `${appliedCode} (20% off)` : `${tier.name} (${(tier.disc * 100).toFixed(0)}% off)`}</span><span style={{ color: GR }}>-${(wsSub - total).toFixed(2)}</span></div>}
+            {appliedCode && <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14 }}><span style={{ color: GR }}>🚚 Shipping</span><span style={{ color: GR, fontWeight: 600 }}>FREE</span></div>}
             {payMethod === "card" && <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14 }}><span style={{ color: "#FFA940" }}>Credit Card Fee (2.99%)</span><span style={{ color: "#FFA940" }}>+${orderFee.toFixed(2)}</span></div>}
             {payMethod === "ach" && <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14 }}><span style={{ color: "#73D13D" }}>ACH Transfer Fee (1%)</span><span style={{ color: "#73D13D" }}>+${orderFee.toFixed(2)}</span></div>}
             <div style={{ borderTop: `1px solid ${B}22`, paddingTop: 12, marginTop: 12, display: "flex", justifyContent: "space-between", alignItems: "baseline" }}><span style={{ fontSize: 16, fontWeight: 600 }}>Subtotal</span><span style={{ fontSize: 26, fontWeight: 800, color: BL }}>${orderTotal.toFixed(2)}</span></div>
             <div style={{ background: `${GR}15`, border: `1px solid ${GR}33`, borderRadius: 10, padding: "9px 14px", marginTop: 12, fontSize: 13, color: GR, fontWeight: 500 }}>💰 Saving ${save.toFixed(2)} off retail</div>
           </div>
-          <div style={{ background: "rgba(255,180,0,.08)", border: "1px solid rgba(255,180,0,.2)", borderRadius: 12, padding: "14px 18px", marginBottom: 20, display: "flex", alignItems: "flex-start", gap: 10 }}><span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>📦</span><div><p style={{ fontSize: 13, color: "#FFC940", fontWeight: 600, marginBottom: 2 }}>Shipping calculated separately</p><p style={{ fontSize: 12, color: "rgba(255,200,64,.6)", lineHeight: 1.5 }}>A shipping charge will be added to your invoice.</p></div></div>
+          {appliedCode ? <div style={{ background: `${GR}12`, border: `1px solid ${GR}33`, borderRadius: 12, padding: "14px 18px", marginBottom: 20, display: "flex", alignItems: "flex-start", gap: 10 }}><span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>🚚</span><div><p style={{ fontSize: 13, color: GR, fontWeight: 600, marginBottom: 2 }}>Free shipping included</p><p style={{ fontSize: 12, color: "rgba(255,255,255,.5)", lineHeight: 1.5 }}>Your {appliedCode} code covers shipping on this order.</p></div></div> : <div style={{ background: "rgba(255,180,0,.08)", border: "1px solid rgba(255,180,0,.2)", borderRadius: 12, padding: "14px 18px", marginBottom: 20, display: "flex", alignItems: "flex-start", gap: 10 }}><span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>📦</span><div><p style={{ fontSize: 13, color: "#FFC940", fontWeight: 600, marginBottom: 2 }}>Shipping calculated separately</p><p style={{ fontSize: 12, color: "rgba(255,200,64,.6)", lineHeight: 1.5 }}>A shipping charge will be added to your invoice.</p></div></div>}
           {wsSub < 50 ? <div style={{ textAlign: "center", padding: 14, background: "rgba(255,80,80,.08)", borderRadius: 12, border: "1px solid rgba(255,80,80,.15)", color: "#FF6B6B", fontSize: 14 }}>Minimum $50 — add ${(50 - wsSub).toFixed(2)} more</div> : <button onClick={submitOrder} disabled={orderSubmitting} className="bh" style={{ width: "100%", padding: 15, background: orderSubmitting ? "rgba(255,255,255,.1)" : `linear-gradient(135deg,${B},${BL})`, border: "none", borderRadius: 12, color: "white", fontWeight: 800, fontSize: 16, cursor: orderSubmitting ? "not-allowed" : "pointer" }}>{orderSubmitting ? "Submitting..." : `Submit Order · $${orderTotal.toFixed(2)}`}</button>}
         </>}
       </div>}
