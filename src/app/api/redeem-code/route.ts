@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
     // 2) A personal win-back code: must belong to this customer, be sent, unredeemed, unexpired.
     const { data: offer } = await supabaseAdmin
       .from("winback_offers")
-      .select("id, customer_id, discount_pct, free_shipping, status, expires_at")
+      .select("id, customer_id, discount_pct, free_shipping, status, expires_at, sample_packets")
       .ilike("code", entered)
       .single();
 
@@ -69,13 +69,16 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, error: "This code has expired." });
       }
       const pct = Number(offer.discount_pct);
+      const samples = Number(offer.sample_packets || 0);
+      const extras = [offer.free_shipping ? "free shipping" : "", samples > 0 ? `${samples} free sample packets` : ""].filter(Boolean).join(" + ");
       return NextResponse.json({
         ok: true,
         code: entered,
         type: "winback",
         discount: pct,
         freeShipping: !!offer.free_shipping,
-        message: `Code applied! ${Math.round(pct * 100)}% off${offer.free_shipping ? " + free shipping" : ""}.`,
+        samplePackets: samples,
+        message: `Code applied! ${Math.round(pct * 100)}% off${extras ? " + " + extras : ""}.`,
       });
     }
 

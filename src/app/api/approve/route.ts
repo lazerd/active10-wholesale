@@ -117,6 +117,34 @@ export async function POST(req: NextRequest) {
       // Update application status
       await supabaseAdmin.from("applications").update({ status: "approved" }).eq("id", applicationId);
 
+      // ── Customer referral: link the new practice to its referrer, mark the
+      // referral "joined", and create their welcome offer (20% + free shipping
+      // + 25 sample packets) as a reusable winback_offers row.
+      let referralWelcome: { code: string } | null = null;
+      if (app.referred_by_code) {
+        const { data: referrer } = await supabaseAdmin
+          .from("customers")
+          .select("id")
+          .eq("referral_code", String(app.referred_by_code).toLowerCase())
+          .single();
+        const { data: newCust } = await supabaseAdmin.from("customers").select("id").eq("email", app.email).single();
+        if (referrer && newCust) {
+          await supabaseAdmin.from("customers").update({ referred_by_customer_id: referrer.id }).eq("id", newCust.id);
+          // Attach to the existing invite (by email) or create a referral record.
+          const { data: existing } = await supabaseAdmin.from("referrals").select("id").eq("referrer_customer_id", referrer.id).ilike("referred_email", app.email).neq("status", "expired").limit(1).single();
+          if (existing) {
+            await supabaseAdmin.from("referrals").update({ status: "joined", referred_customer_id: newCust.id, joined_at: new Date().toISOString() }).eq("id", existing.id);
+          } else {
+            await supabaseAdmin.from("referrals").insert({ referrer_customer_id: referrer.id, referred_email: app.email, referred_name: app.name, referred_customer_id: newCust.id, status: "joined", reward_amount: 100, joined_at: new Date().toISOString() });
+          }
+          // Welcome offer redeemable through the existing discount-code engine.
+          const welcomeCode = "WELCOME" + Math.random().toString(36).slice(2, 7).toUpperCase();
+          const expires = new Date(Date.now() + 30 * 86400000);
+          await supabaseAdmin.from("winback_offers").insert({ customer_id: newCust.id, customer_email: app.email, code: welcomeCode, discount_pct: 0.2, free_shipping: true, sample_packets: 25, kind: "referral_welcome", status: "sent", subject: "Welcome offer", reason: "Referral welcome", expires_at: expires.toISOString() });
+          referralWelcome = { code: welcomeCode };
+        }
+      }
+
       // Send welcome email with login credentials
       await sendEmail(
         app.email,
@@ -126,7 +154,8 @@ export async function POST(req: NextRequest) {
           <h2 style="color:#0072BC">Welcome to Active 10 Wholesale!</h2>
           <p>Hi ${app.name},</p>
           <p>Great news — your wholesale application has been approved! You can now access our wholesale portal and start ordering at exclusive wholesale pricing.</p>
-          
+          ${referralWelcome ? `<div style="background:#f0f7ff;border:2px dashed #0072BC;border-radius:12px;padding:20px;text-align:center;margin:20px 0;"><div style="font-size:20px;font-weight:900;color:#0072BC;">Your Welcome Gift 🎁</div><div style="font-size:14px;color:#0072BC;font-weight:600;margin-top:6px;">20% off + free shipping + 25 free sample packets on your first order</div><div style="margin-top:12px;font-size:13px;color:#666;">Enter this code at checkout:</div><div style="font-size:20px;font-weight:800;letter-spacing:2px;font-family:monospace;color:#1a1a2e;margin-top:4px;">${referralWelcome.code}</div></div>` : ""}
+
           <div style="background:#f5f8fa;border:1px solid #e1e8ed;border-radius:12px;padding:24px;margin:24px 0">
             <h3 style="margin:0 0 16px 0;color:#333">Your Login Credentials</h3>
             <table style="border-collapse:collapse;width:100%">
