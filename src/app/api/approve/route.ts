@@ -83,6 +83,17 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: authError.message }, { status: 500 });
       }
 
+      // If this applicant came in through an affiliate referral link, credit them.
+      let affiliateId: string | null = null;
+      if (app.affiliate_slug) {
+        const { data: aff } = await supabaseAdmin
+          .from("affiliates")
+          .select("id, status")
+          .eq("slug", String(app.affiliate_slug).toLowerCase())
+          .single();
+        if (aff && aff.status === "active") affiliateId = aff.id;
+      }
+
       // Create customer record
       const { error: custError } = await supabaseAdmin.from("customers").insert({
         user_id: authUser.user.id,
@@ -96,6 +107,7 @@ export async function POST(req: NextRequest) {
         zip: app.zip || null,
         type: app.type,
         status: "active",
+        affiliate_id: affiliateId,
       });
 
       if (custError) {

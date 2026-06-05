@@ -1,6 +1,8 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import AffiliateDashboard from "@/components/AffiliateDashboard";
+import AdminAffiliates from "@/components/AdminAffiliates";
 
 const B = "#0072BC", BL = "#0088DD", BD = "#005A96", BBG = "#003A5C", BDP = "#00253D", GR = "#00B894";
 
@@ -40,6 +42,8 @@ const processingFee = (amount: number, method: string) => {
 export default function App() {
   const [session, setSession] = useState<any>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isAffiliate, setIsAffiliate] = useState(false);
+  const [refSlug, setRefSlug] = useState("");
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState<Product[]>([]);
@@ -108,6 +112,10 @@ export default function App() {
     if (p.get("error_code") || p.get("error_description")) {
       window.history.replaceState({}, "", window.location.pathname);
     }
+    // Capture an affiliate referral (?ref=slug or remembered from a /r/<slug> visit)
+    let ref = p.get("ref") || "";
+    try { if (!ref) ref = localStorage.getItem("a10_ref") || ""; else localStorage.setItem("a10_ref", ref); } catch {}
+    if (ref) { setRefSlug(ref.toLowerCase()); setAuthView("apply"); if (p.get("ref")) window.history.replaceState({}, "", window.location.pathname); }
 
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s);
@@ -135,7 +143,7 @@ export default function App() {
   useEffect(() => { supabase.from("products").select("*").eq("active", true).order("sort_order").then(({ data }) => { if (data) setProducts(data as Product[]); }); }, []);
   useEffect(() => { const p = new URLSearchParams(window.location.search); if (p.get("qb_connected") === "true") { setQbConnected(true); setQbMessage({ text: "QuickBooks connected successfully!", ok: true }); window.history.replaceState({}, "", window.location.pathname); } if (p.get("qb_error")) { setQbMessage({ text: `QuickBooks connection failed: ${p.get("qb_error")}`, ok: false }); window.history.replaceState({}, "", window.location.pathname); } fetch("/api/qb/status").then(r => r.json()).then(d => setQbConnected(d.connected)).catch(() => {}); }, []);
 
-  const loadUserData = async (s: any) => { setLoading(true); const email = s.user.email; const { data: ad } = await supabase.from("admin_emails").select("email").eq("email", email).single(); setIsAdmin(!!ad); const { data: cd } = await supabase.from("customers").select("*").eq("email", email).single(); if (cd) setCustomer(cd as Customer); if (ad) await loadAdminData(); setLoading(false); };
+  const loadUserData = async (s: any) => { setLoading(true); const email = s.user.email; const { data: ad } = await supabase.from("admin_emails").select("email").eq("email", email).single(); setIsAdmin(!!ad); const { data: cd } = await supabase.from("customers").select("*").eq("email", email).single(); if (cd) setCustomer(cd as Customer); else setCustomer(null); if (!ad && !cd) { const { data: af } = await supabase.from("affiliates").select("id").limit(1); setIsAffiliate(!!(af && af.length)); } else setIsAffiliate(false); if (ad) await loadAdminData(); setLoading(false); };
   const loadAdminData = async () => { const [c, a, o] = await Promise.all([supabase.from("customers").select("*").order("total_spent", { ascending: false }), supabase.from("applications").select("*").order("created_at", { ascending: false }), supabase.from("orders").select("*").order("created_at", { ascending: false })]); if (c.data) setCustomers(c.data as Customer[]); if (a.data) setApplications(a.data as Application[]); if (o.data) setOrders(o.data as Order[]); };
 
   const items = Object.entries(cart).filter(([, q]) => q > 0);
@@ -155,9 +163,9 @@ export default function App() {
   const changePassword = async () => { if (newPw.length < 6) { setPwMsg("Password must be at least 6 characters."); return; } const { error } = await supabase.auth.updateUser({ password: newPw }); if (!error) { setPwMsg("Password updated!"); setNewPw(""); setTimeout(() => { setShowChangePw(false); setPwMsg(""); }, 2000); } else setPwMsg("Error: " + error.message); };
   const forgotPassword = async () => { if (!resetEmail) { setResetMsg("Enter your email."); return; } const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, { redirectTo: "https://wholesale.getactive10.com" }); if (!error) setResetMsg("Reset link sent! Check your inbox."); else setResetMsg("Error: " + error.message); };
   const login = async () => { setLoginError(""); const e = loginForm.email.trim().toLowerCase(), p = loginForm.password.trim(); if (!e || !p) { setLoginError("Please enter your credentials."); return; } const { error } = await supabase.auth.signInWithPassword({ email: e, password: p }); if (error) setLoginError(error.message === "Invalid login credentials" ? "Invalid email or password." : error.message); };
-  const logout = async () => { await supabase.auth.signOut(); setSession(null); setIsAdmin(false); setCustomer(null); setLoginForm({ email: "", password: "" }); setView("shop"); setCart({}); setSelectedCustomer(null); setAppliedCode(""); setCodeInput(""); setCodeMsg(null); };
+  const logout = async () => { await supabase.auth.signOut(); setSession(null); setIsAdmin(false); setIsAffiliate(false); setCustomer(null); setLoginForm({ email: "", password: "" }); setView("shop"); setCart({}); setSelectedCustomer(null); setAppliedCode(""); setCodeInput(""); setCodeMsg(null); };
 
-  const submitApplication = async () => { const r = { name: appForm.name, email: appForm.email, phone: appForm.phone, business: appForm.business, address: appForm.address, city: appForm.city, state: appForm.state, zip: appForm.zip, type: appForm.type }; const { error } = await supabase.from("applications").insert(r); if (!error) { setAppSubmitted(true); fetch("/api/webhook", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "application", record: r }) }).catch(() => {}); } };
+  const submitApplication = async () => { const r = { name: appForm.name, email: appForm.email, phone: appForm.phone, business: appForm.business, address: appForm.address, city: appForm.city, state: appForm.state, zip: appForm.zip, type: appForm.type, ...(refSlug ? { affiliate_slug: refSlug } : {}) }; const { error } = await supabase.from("applications").insert(r); if (!error) { setAppSubmitted(true); fetch("/api/webhook", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "application", record: r }) }).catch(() => {}); } };
 
   const applyCode = async () => {
     if (!customer || codeChecking) return;
@@ -399,7 +407,7 @@ const submitManualOrder = async () => { if (!manualCustomerId) { alert("Select a
         <div style={{ background: qbConnected ? "rgba(0,184,148,.08)" : "rgba(255,255,255,.04)", border: `1px solid ${qbConnected ? "rgba(0,184,148,.25)" : "rgba(0,114,188,.2)"}`, borderRadius: 12, padding: "12px 18px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}><div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontSize: 18 }}>📗</span><div><div style={{ fontSize: 13, fontWeight: 600, color: qbConnected ? "#00B894" : "rgba(255,255,255,.6)" }}>QuickBooks {qbConnected ? "Connected" : "Not Connected"}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,.35)" }}>{qbConnected ? "Sync customers & create invoices" : "Connect to push data to QBO"}</div></div></div>{qbConnected ? <button onClick={disconnectQB} style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid rgba(255,80,80,.3)", background: "rgba(255,80,80,.08)", color: "#FF6B6B", fontSize: 12, fontWeight: 500, cursor: "pointer" }}>Disconnect</button> : <a href="/api/qb/connect" style={{ padding: "8px 18px", borderRadius: 8, background: "linear-gradient(135deg,#2CA01C,#48BB78)", color: "white", fontSize: 12, fontWeight: 600, textDecoration: "none" }}>Connect QuickBooks</a>}</div>
         {qbMessage && <div style={{ background: qbMessage.ok ? "rgba(0,184,148,.1)" : "rgba(255,80,80,.1)", border: `1px solid ${qbMessage.ok ? "rgba(0,184,148,.3)" : "rgba(255,80,80,.3)"}`, borderRadius: 8, padding: "10px 14px", marginBottom: 12, fontSize: 13, color: qbMessage.ok ? "#00B894" : "#FF6B6B", display: "flex", justifyContent: "space-between", alignItems: "center" }}><span>{qbMessage.text}</span><button onClick={() => setQbMessage(null)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: 16 }}>×</button></div>}
 
-        <div style={{ display: "flex", gap: 4, marginBottom: 24, background: "rgba(255,255,255,.03)", borderRadius: 12, padding: 4 }}>{["customers", "applicants", "orders"].map(t => <button key={t} onClick={() => { setAdminTab(t); setSelectedCustomer(null); setExpandedOrder(null); setEditingOrderId(null); }} style={{ flex: 1, padding: "10px 16px", borderRadius: 10, border: "none", background: adminTab === t ? `${B}33` : "transparent", color: adminTab === t ? "white" : "rgba(255,255,255,.5)", fontWeight: 600, fontSize: 13, cursor: "pointer", textTransform: "capitalize", transition: "all .2s" }}>{t}{t === "applicants" && pending.length > 0 ? ` (${pending.length})` : ""}</button>)}</div>
+        <div style={{ display: "flex", gap: 4, marginBottom: 24, background: "rgba(255,255,255,.03)", borderRadius: 12, padding: 4 }}>{["customers", "applicants", "orders", "affiliates"].map(t => <button key={t} onClick={() => { setAdminTab(t); setSelectedCustomer(null); setExpandedOrder(null); setEditingOrderId(null); }} style={{ flex: 1, padding: "10px 16px", borderRadius: 10, border: "none", background: adminTab === t ? `${B}33` : "transparent", color: adminTab === t ? "white" : "rgba(255,255,255,.5)", fontWeight: 600, fontSize: 13, cursor: "pointer", textTransform: "capitalize", transition: "all .2s" }}>{t}{t === "applicants" && pending.length > 0 ? ` (${pending.length})` : ""}</button>)}</div>
 
         {adminTab === "customers" && !selectedCustomer && (<div>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 14 }}><button onClick={() => { setAddingCustomer(true); setAddCustError(""); }} className="bh" style={{ ...btnP, display: "flex", alignItems: "center", gap: 6 }}><span>➕</span> Add Customer</button><button onClick={exportCustomersCSV} className="bh" style={{ ...btnS, display: "flex", alignItems: "center", gap: 6 }}><span style={{ fontSize: 15 }}>📥</span> Export (CSV)</button></div>
@@ -483,9 +491,14 @@ const submitManualOrder = async () => { if (!manualCustomerId) { alert("Select a
           <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}><button onClick={startManualOrder} className="bh" style={{ ...btnP, display: "flex", alignItems: "center", gap: 6 }}><span>➕</span> Create Order</button></div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{orders.length === 0 && <div style={{ textAlign: "center", padding: 40, color: "rgba(255,255,255,.4)" }}>No orders</div>}{orders.map((o, i) => renderOrdRow(o, i))}</div>
         </div>)}
+
+        {adminTab === "affiliates" && <AdminAffiliates />}
       </div>
     </div>);
   }
+
+  // ===== AFFILIATE PORTAL =====
+  if (isAffiliate) return <AffiliateDashboard onLogout={logout} />;
 
   // ===== SHOP =====
   const orderFee = processingFee(total, payMethod);
