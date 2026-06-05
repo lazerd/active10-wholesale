@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import AffiliateDashboard from "@/components/AffiliateDashboard";
 import AdminAffiliates from "@/components/AdminAffiliates";
+import AdminWinback from "@/components/AdminWinback";
 
 const B = "#0072BC", BL = "#0088DD", BD = "#005A96", BBG = "#003A5C", BDP = "#00253D", GR = "#00B894";
 
@@ -59,6 +60,9 @@ export default function App() {
   const [orderNote, setOrderNote] = useState("");
   const [codeInput, setCodeInput] = useState("");
   const [appliedCode, setAppliedCode] = useState("");
+  const [appliedPct, setAppliedPct] = useState(0);
+  const [appliedFreeShip, setAppliedFreeShip] = useState(false);
+  const [appliedType, setAppliedType] = useState("");
   const [codeMsg, setCodeMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [codeChecking, setCodeChecking] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(false);
@@ -149,11 +153,13 @@ export default function App() {
   const items = Object.entries(cart).filter(([, q]) => q > 0);
   const wsSub = items.reduce((s, [id, q]) => s + (products.find(p => p.id === id)?.retail || 0) * 0.5 * q, 0);
   const tier = getTier(wsSub);
-  // When the promo code is applied the customer gets the better of their tier
-  // discount or the flat 20% code discount, plus free shipping.
-  const codeDisc = appliedCode ? PROMO_DISCOUNT : 0;
+  // When a discount code is applied (members promo or a personal win-back code)
+  // the customer gets the better of their tier discount or the code's discount,
+  // plus free shipping if the code includes it.
+  const codeDisc = appliedCode ? appliedPct : 0;
   const effDisc = Math.max(tier.disc, codeDisc);
   const codeBeatsTier = appliedCode && codeDisc > tier.disc;
+  const codeFreeShip = appliedCode && appliedFreeShip;
   const total = items.reduce((s, [id, q]) => { const p = products.find(p => p.id === id); return s + (p ? fp(p.retail, effDisc) * q : 0); }, 0);
   const count = items.reduce((s, [, q]) => s + q, 0);
   const save = items.reduce((s, [id, q]) => { const p = products.find(p => p.id === id); return s + (p ? (p.retail - fp(p.retail, effDisc)) * q : 0); }, 0);
@@ -163,7 +169,7 @@ export default function App() {
   const changePassword = async () => { if (newPw.length < 6) { setPwMsg("Password must be at least 6 characters."); return; } const { error } = await supabase.auth.updateUser({ password: newPw }); if (!error) { setPwMsg("Password updated!"); setNewPw(""); setTimeout(() => { setShowChangePw(false); setPwMsg(""); }, 2000); } else setPwMsg("Error: " + error.message); };
   const forgotPassword = async () => { if (!resetEmail) { setResetMsg("Enter your email."); return; } const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, { redirectTo: "https://wholesale.getactive10.com" }); if (!error) setResetMsg("Reset link sent! Check your inbox."); else setResetMsg("Error: " + error.message); };
   const login = async () => { setLoginError(""); const e = loginForm.email.trim().toLowerCase(), p = loginForm.password.trim(); if (!e || !p) { setLoginError("Please enter your credentials."); return; } const { error } = await supabase.auth.signInWithPassword({ email: e, password: p }); if (error) setLoginError(error.message === "Invalid login credentials" ? "Invalid email or password." : error.message); };
-  const logout = async () => { await supabase.auth.signOut(); setSession(null); setIsAdmin(false); setIsAffiliate(false); setCustomer(null); setLoginForm({ email: "", password: "" }); setView("shop"); setCart({}); setSelectedCustomer(null); setAppliedCode(""); setCodeInput(""); setCodeMsg(null); };
+  const logout = async () => { await supabase.auth.signOut(); setSession(null); setIsAdmin(false); setIsAffiliate(false); setCustomer(null); setLoginForm({ email: "", password: "" }); setView("shop"); setCart({}); setSelectedCustomer(null); setAppliedCode(""); setAppliedPct(0); setAppliedFreeShip(false); setAppliedType(""); setCodeInput(""); setCodeMsg(null); };
 
   const submitApplication = async () => { const r = { name: appForm.name, email: appForm.email, phone: appForm.phone, business: appForm.business, address: appForm.address, city: appForm.city, state: appForm.state, zip: appForm.zip, type: appForm.type, ...(refSlug ? { affiliate_slug: refSlug } : {}) }; const { error } = await supabase.from("applications").insert(r); if (!error) { setAppSubmitted(true); fetch("/api/webhook", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "application", record: r }) }).catch(() => {}); } };
 
@@ -175,12 +181,12 @@ export default function App() {
     try {
       const r = await fetch("/api/redeem-code", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ customerId: customer.id, code }) });
       const d = await r.json();
-      if (d.ok) { setAppliedCode(PROMO_CODE); setCodeMsg({ text: d.message || "Code applied!", ok: true }); }
-      else { setAppliedCode(""); setCodeMsg({ text: d.error || "Invalid code.", ok: false }); }
+      if (d.ok) { setAppliedCode(d.code || code.toUpperCase()); setAppliedPct(Number(d.discount) || 0); setAppliedFreeShip(!!d.freeShipping); setAppliedType(d.type || ""); setCodeMsg({ text: d.message || "Code applied!", ok: true }); }
+      else { setAppliedCode(""); setAppliedPct(0); setAppliedFreeShip(false); setAppliedType(""); setCodeMsg({ text: d.error || "Invalid code.", ok: false }); }
     } catch { setCodeMsg({ text: "Could not validate code. Try again.", ok: false }); }
     setCodeChecking(false);
   };
-  const removeCode = () => { setAppliedCode(""); setCodeInput(""); setCodeMsg(null); };
+  const removeCode = () => { setAppliedCode(""); setAppliedPct(0); setAppliedFreeShip(false); setAppliedType(""); setCodeInput(""); setCodeMsg(null); };
 
   const submitOrder = async () => {
     if (!customer || orderSubmitting) return;
@@ -197,11 +203,17 @@ export default function App() {
     }
     const oi: OrderItem[] = items.map(([id, q]) => { const p = products.find(p => p.id === id)!; const up = fp(p.retail, effDisc); return { product_id: id, name: p.name, qty: q, unit_price: up, line_total: up * q }; });
     const cf = processingFee(total, payMethod);
-    const tierName = useCode ? (codeBeatsTier ? PROMO_CODE : `${tier.name} + ${PROMO_CODE}`) : tier.name;
-    const notes = useCode ? `🎟️ ${PROMO_CODE} — 20% off + FREE SHIPPING${orderNote ? ` · ${orderNote}` : ""}` : (orderNote || null);
+    const pctLabel = Math.round(appliedPct * 100);
+    const shipTxt = codeFreeShip ? " + FREE SHIPPING" : "";
+    const tierName = useCode ? (codeBeatsTier ? useCode : `${tier.name} + ${useCode}`) : tier.name;
+    const notes = useCode ? `🎟️ ${useCode} — ${pctLabel}% off${shipTxt}${orderNote ? ` · ${orderNote}` : ""}` : (orderNote || null);
     const { data, error } = await supabase.from("orders").insert({ order_number: "", customer_id: customer.id, customer_name: customer.name, customer_email: customer.email, items: oi, subtotal: Math.round(wsSub * 100) / 100, tier_name: tierName, tier_discount: effDisc, discount_amount: Math.round((wsSub - total) * 100) / 100, cc_fee: cf, total: Math.round((total + cf) * 100) / 100, pay_method: payMethod, notes }).select().single();
     setOrderSubmitting(false);
-    if (!error && data) { setOrderSuccess(true); fetch("/api/webhook", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "order", record: { ...data, discount_code: useCode || null, free_shipping: !!useCode, customer_address: customer.address, customer_city: customer.city, customer_state: customer.state, customer_zip: customer.zip } }) }).catch(() => {}); }
+    if (!error && data) {
+      setOrderSuccess(true);
+      if (useCode && appliedType === "winback") fetch("/api/winback/redeem", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: useCode, orderId: data.id, customerId: customer.id }) }).catch(() => {});
+      fetch("/api/webhook", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "order", record: { ...data, discount_code: useCode || null, free_shipping: !!(useCode && codeFreeShip), customer_address: customer.address, customer_city: customer.city, customer_state: customer.state, customer_zip: customer.zip } }) }).catch(() => {});
+    }
     else alert("Failed to submit order.");
   };
 
@@ -268,7 +280,7 @@ const submitManualOrder = async () => { if (!manualCustomerId) { alert("Select a
 
   if (loading) return (<div style={{ ...bg, display: "flex", alignItems: "center", justifyContent: "center" }}>{fonts}{css}<div style={{ textAlign: "center", animation: "su .5s ease" }}><div style={{ width: 48, height: 48, borderRadius: 12, background: `linear-gradient(135deg,${B},${BL})`, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 18, color: "white", margin: "0 auto 16px" }}>A10</div><p style={{ color: "rgba(255,255,255,.5)", fontSize: 14 }}>Loading...</p></div></div>);
 
-  if (orderSuccess) return (<div style={{ ...bg, display: "flex", alignItems: "center", justifyContent: "center" }}>{fonts}{css}<div style={{ textAlign: "center", padding: 40, maxWidth: 500, animation: "su .5s ease" }}><div style={{ width: 80, height: 80, borderRadius: "50%", background: `linear-gradient(135deg,${GR},#00D2A0)`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px", fontSize: 36 }}>✓</div><h1 style={{ fontFamily: "'Playfair Display',serif", fontSize: 32, marginBottom: 12 }}>Order Submitted!</h1><p style={{ color: "rgba(255,255,255,.7)", fontSize: 16, lineHeight: 1.6, marginBottom: 32 }}>Your wholesale order has been sent to Active Formulations.</p><button onClick={() => { setOrderSuccess(false); setCart({}); setView("shop"); setAppliedCode(""); setCodeInput(""); setCodeMsg(null); }} className="bh" style={{ ...btnP, padding: "14px 32px", fontSize: 15, fontWeight: 700 }}>Continue Shopping</button></div></div>);
+  if (orderSuccess) return (<div style={{ ...bg, display: "flex", alignItems: "center", justifyContent: "center" }}>{fonts}{css}<div style={{ textAlign: "center", padding: 40, maxWidth: 500, animation: "su .5s ease" }}><div style={{ width: 80, height: 80, borderRadius: "50%", background: `linear-gradient(135deg,${GR},#00D2A0)`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px", fontSize: 36 }}>✓</div><h1 style={{ fontFamily: "'Playfair Display',serif", fontSize: 32, marginBottom: 12 }}>Order Submitted!</h1><p style={{ color: "rgba(255,255,255,.7)", fontSize: 16, lineHeight: 1.6, marginBottom: 32 }}>Your wholesale order has been sent to Active Formulations.</p><button onClick={() => { setOrderSuccess(false); setCart({}); setView("shop"); setAppliedCode(""); setAppliedPct(0); setAppliedFreeShip(false); setAppliedType(""); setCodeInput(""); setCodeMsg(null); }} className="bh" style={{ ...btnP, padding: "14px 32px", fontSize: 15, fontWeight: 700 }}>Continue Shopping</button></div></div>);
 
   // LOGIN
   if (!session) return (
@@ -407,7 +419,7 @@ const submitManualOrder = async () => { if (!manualCustomerId) { alert("Select a
         <div style={{ background: qbConnected ? "rgba(0,184,148,.08)" : "rgba(255,255,255,.04)", border: `1px solid ${qbConnected ? "rgba(0,184,148,.25)" : "rgba(0,114,188,.2)"}`, borderRadius: 12, padding: "12px 18px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}><div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontSize: 18 }}>📗</span><div><div style={{ fontSize: 13, fontWeight: 600, color: qbConnected ? "#00B894" : "rgba(255,255,255,.6)" }}>QuickBooks {qbConnected ? "Connected" : "Not Connected"}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,.35)" }}>{qbConnected ? "Sync customers & create invoices" : "Connect to push data to QBO"}</div></div></div>{qbConnected ? <button onClick={disconnectQB} style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid rgba(255,80,80,.3)", background: "rgba(255,80,80,.08)", color: "#FF6B6B", fontSize: 12, fontWeight: 500, cursor: "pointer" }}>Disconnect</button> : <a href="/api/qb/connect" style={{ padding: "8px 18px", borderRadius: 8, background: "linear-gradient(135deg,#2CA01C,#48BB78)", color: "white", fontSize: 12, fontWeight: 600, textDecoration: "none" }}>Connect QuickBooks</a>}</div>
         {qbMessage && <div style={{ background: qbMessage.ok ? "rgba(0,184,148,.1)" : "rgba(255,80,80,.1)", border: `1px solid ${qbMessage.ok ? "rgba(0,184,148,.3)" : "rgba(255,80,80,.3)"}`, borderRadius: 8, padding: "10px 14px", marginBottom: 12, fontSize: 13, color: qbMessage.ok ? "#00B894" : "#FF6B6B", display: "flex", justifyContent: "space-between", alignItems: "center" }}><span>{qbMessage.text}</span><button onClick={() => setQbMessage(null)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: 16 }}>×</button></div>}
 
-        <div style={{ display: "flex", gap: 4, marginBottom: 24, background: "rgba(255,255,255,.03)", borderRadius: 12, padding: 4 }}>{["customers", "applicants", "orders", "affiliates"].map(t => <button key={t} onClick={() => { setAdminTab(t); setSelectedCustomer(null); setExpandedOrder(null); setEditingOrderId(null); }} style={{ flex: 1, padding: "10px 16px", borderRadius: 10, border: "none", background: adminTab === t ? `${B}33` : "transparent", color: adminTab === t ? "white" : "rgba(255,255,255,.5)", fontWeight: 600, fontSize: 13, cursor: "pointer", textTransform: "capitalize", transition: "all .2s" }}>{t}{t === "applicants" && pending.length > 0 ? ` (${pending.length})` : ""}</button>)}</div>
+        <div style={{ display: "flex", gap: 4, marginBottom: 24, background: "rgba(255,255,255,.03)", borderRadius: 12, padding: 4 }}>{["customers", "applicants", "orders", "affiliates", "winback"].map(t => <button key={t} onClick={() => { setAdminTab(t); setSelectedCustomer(null); setExpandedOrder(null); setEditingOrderId(null); }} style={{ flex: 1, padding: "10px 16px", borderRadius: 10, border: "none", background: adminTab === t ? `${B}33` : "transparent", color: adminTab === t ? "white" : "rgba(255,255,255,.5)", fontWeight: 600, fontSize: 13, cursor: "pointer", textTransform: "capitalize", transition: "all .2s" }}>{t === "winback" ? "Win-Back" : t}{t === "applicants" && pending.length > 0 ? ` (${pending.length})` : ""}</button>)}</div>
 
         {adminTab === "customers" && !selectedCustomer && (<div>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 14 }}><button onClick={() => { setAddingCustomer(true); setAddCustError(""); }} className="bh" style={{ ...btnP, display: "flex", alignItems: "center", gap: 6 }}><span>➕</span> Add Customer</button><button onClick={exportCustomersCSV} className="bh" style={{ ...btnS, display: "flex", alignItems: "center", gap: 6 }}><span style={{ fontSize: 15 }}>📥</span> Export (CSV)</button></div>
@@ -493,6 +505,7 @@ const submitManualOrder = async () => { if (!manualCustomerId) { alert("Select a
         </div>)}
 
         {adminTab === "affiliates" && <AdminAffiliates />}
+        {adminTab === "winback" && <AdminWinback />}
       </div>
     </div>);
   }
@@ -520,7 +533,7 @@ const submitManualOrder = async () => { if (!manualCustomerId) { alert("Select a
             <label style={{ display: "block", fontSize: 11, color: "rgba(255,255,255,.4)", marginBottom: 12, textTransform: "uppercase", letterSpacing: ".8px" }}>Discount Code</label>
             {appliedCode ? (
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 16px", background: `${GR}15`, border: `1px solid ${GR}44`, borderRadius: 10 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontSize: 18 }}>🎟️</span><div><div style={{ fontWeight: 700, fontSize: 14, color: GR, letterSpacing: ".5px" }}>{appliedCode}</div><div style={{ fontSize: 12, color: "rgba(255,255,255,.5)" }}>20% off + free shipping applied</div></div></div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontSize: 18 }}>🎟️</span><div><div style={{ fontWeight: 700, fontSize: 14, color: GR, letterSpacing: ".5px" }}>{appliedCode}</div><div style={{ fontSize: 12, color: "rgba(255,255,255,.5)" }}>{Math.round(appliedPct * 100)}% off{appliedFreeShip ? " + free shipping" : ""} applied</div></div></div>
                 <button onClick={removeCode} style={{ background: "none", border: "none", color: "rgba(255,255,255,.4)", fontSize: 13, cursor: "pointer", textDecoration: "underline" }}>Remove</button>
               </div>
             ) : (
@@ -535,14 +548,14 @@ const submitManualOrder = async () => { if (!manualCustomerId) { alert("Select a
           <div style={{ background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 16, padding: 22, marginBottom: 16 }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14 }}><span style={{ color: "rgba(255,255,255,.5)" }}>Retail</span><span style={{ textDecoration: "line-through", color: "rgba(255,255,255,.3)" }}>${items.reduce((s, [id, q]) => s + (products.find(p => p.id === id)?.retail || 0) * q, 0).toFixed(2)}</span></div>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14 }}><span style={{ color: "rgba(255,255,255,.5)" }}>Wholesale (50%)</span><span>${wsSub.toFixed(2)}</span></div>
-            {effDisc > 0 && <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14 }}><span style={{ color: GR }}>{codeBeatsTier ? `${appliedCode} (20% off)` : `${tier.name} (${(tier.disc * 100).toFixed(0)}% off)`}</span><span style={{ color: GR }}>-${(wsSub - total).toFixed(2)}</span></div>}
-            {appliedCode && <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14 }}><span style={{ color: GR }}>🚚 Shipping</span><span style={{ color: GR, fontWeight: 600 }}>FREE</span></div>}
+            {effDisc > 0 && <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14 }}><span style={{ color: GR }}>{codeBeatsTier ? `${appliedCode} (${Math.round(appliedPct * 100)}% off)` : `${tier.name} (${(tier.disc * 100).toFixed(0)}% off)`}</span><span style={{ color: GR }}>-${(wsSub - total).toFixed(2)}</span></div>}
+            {codeFreeShip && <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14 }}><span style={{ color: GR }}>🚚 Shipping</span><span style={{ color: GR, fontWeight: 600 }}>FREE</span></div>}
             {payMethod === "card" && <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14 }}><span style={{ color: "#FFA940" }}>Credit Card Fee (2.99%)</span><span style={{ color: "#FFA940" }}>+${orderFee.toFixed(2)}</span></div>}
             {payMethod === "ach" && <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14 }}><span style={{ color: "#73D13D" }}>ACH Transfer Fee (1%)</span><span style={{ color: "#73D13D" }}>+${orderFee.toFixed(2)}</span></div>}
             <div style={{ borderTop: `1px solid ${B}22`, paddingTop: 12, marginTop: 12, display: "flex", justifyContent: "space-between", alignItems: "baseline" }}><span style={{ fontSize: 16, fontWeight: 600 }}>Subtotal</span><span style={{ fontSize: 26, fontWeight: 800, color: BL }}>${orderTotal.toFixed(2)}</span></div>
             <div style={{ background: `${GR}15`, border: `1px solid ${GR}33`, borderRadius: 10, padding: "9px 14px", marginTop: 12, fontSize: 13, color: GR, fontWeight: 500 }}>💰 Saving ${save.toFixed(2)} off retail</div>
           </div>
-          {appliedCode ? <div style={{ background: `${GR}12`, border: `1px solid ${GR}33`, borderRadius: 12, padding: "14px 18px", marginBottom: 20, display: "flex", alignItems: "flex-start", gap: 10 }}><span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>🚚</span><div><p style={{ fontSize: 13, color: GR, fontWeight: 600, marginBottom: 2 }}>Free shipping included</p><p style={{ fontSize: 12, color: "rgba(255,255,255,.5)", lineHeight: 1.5 }}>Your {appliedCode} code covers shipping on this order.</p></div></div> : <div style={{ background: "rgba(255,180,0,.08)", border: "1px solid rgba(255,180,0,.2)", borderRadius: 12, padding: "14px 18px", marginBottom: 20, display: "flex", alignItems: "flex-start", gap: 10 }}><span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>📦</span><div><p style={{ fontSize: 13, color: "#FFC940", fontWeight: 600, marginBottom: 2 }}>Shipping calculated separately</p><p style={{ fontSize: 12, color: "rgba(255,200,64,.6)", lineHeight: 1.5 }}>A shipping charge will be added to your invoice.</p></div></div>}
+          {codeFreeShip ? <div style={{ background: `${GR}12`, border: `1px solid ${GR}33`, borderRadius: 12, padding: "14px 18px", marginBottom: 20, display: "flex", alignItems: "flex-start", gap: 10 }}><span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>🚚</span><div><p style={{ fontSize: 13, color: GR, fontWeight: 600, marginBottom: 2 }}>Free shipping included</p><p style={{ fontSize: 12, color: "rgba(255,255,255,.5)", lineHeight: 1.5 }}>Your {appliedCode} code covers shipping on this order.</p></div></div> : <div style={{ background: "rgba(255,180,0,.08)", border: "1px solid rgba(255,180,0,.2)", borderRadius: 12, padding: "14px 18px", marginBottom: 20, display: "flex", alignItems: "flex-start", gap: 10 }}><span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>📦</span><div><p style={{ fontSize: 13, color: "#FFC940", fontWeight: 600, marginBottom: 2 }}>Shipping calculated separately</p><p style={{ fontSize: 12, color: "rgba(255,200,64,.6)", lineHeight: 1.5 }}>A shipping charge will be added to your invoice.</p></div></div>}
           {wsSub < 50 ? <div style={{ textAlign: "center", padding: 14, background: "rgba(255,80,80,.08)", borderRadius: 12, border: "1px solid rgba(255,80,80,.15)", color: "#FF6B6B", fontSize: 14 }}>Minimum $50 — add ${(50 - wsSub).toFixed(2)} more</div> : <button onClick={submitOrder} disabled={orderSubmitting} className="bh" style={{ width: "100%", padding: 15, background: orderSubmitting ? "rgba(255,255,255,.1)" : `linear-gradient(135deg,${B},${BL})`, border: "none", borderRadius: 12, color: "white", fontWeight: 800, fontSize: 16, cursor: orderSubmitting ? "not-allowed" : "pointer" }}>{orderSubmitting ? "Submitting..." : `Submit Order · $${orderTotal.toFixed(2)}`}</button>}
         </>}
       </div>}

@@ -31,21 +31,55 @@ export async function POST(req: NextRequest) {
     if (!customerId) {
       return NextResponse.json({ ok: false, error: "Missing customer." }, { status: 400 });
     }
-    if (!code || String(code).trim().toUpperCase() !== CODE) {
-      return NextResponse.json({ ok: false, error: "Invalid discount code." });
+    const entered = String(code || "").trim().toUpperCase();
+    if (!entered) {
+      return NextResponse.json({ ok: false, error: "Enter a code." });
     }
 
-    if (await hasUsedCode(customerId)) {
-      return NextResponse.json({ ok: false, alreadyUsed: true, error: "This code has already been used on your account." });
+    // 1) The evergreen members promo (one redemption per customer).
+    if (entered === CODE) {
+      if (await hasUsedCode(customerId)) {
+        return NextResponse.json({ ok: false, alreadyUsed: true, error: "This code has already been used on your account." });
+      }
+      return NextResponse.json({
+        ok: true,
+        code: CODE,
+        type: "promo",
+        discount: CODE_DISCOUNT,
+        freeShipping: true,
+        message: "Code applied! 20% off + free shipping.",
+      });
     }
 
-    return NextResponse.json({
-      ok: true,
-      code: CODE,
-      discount: CODE_DISCOUNT,
-      freeShipping: true,
-      message: "Code applied! 20% off + free shipping.",
-    });
+    // 2) A personal win-back code: must belong to this customer, be sent, unredeemed, unexpired.
+    const { data: offer } = await supabaseAdmin
+      .from("winback_offers")
+      .select("id, customer_id, discount_pct, free_shipping, status, expires_at")
+      .ilike("code", entered)
+      .single();
+
+    if (offer && offer.customer_id === customerId) {
+      if (offer.status === "redeemed") {
+        return NextResponse.json({ ok: false, alreadyUsed: true, error: "This code has already been used." });
+      }
+      if (offer.status !== "sent") {
+        return NextResponse.json({ ok: false, error: "This code isn't active." });
+      }
+      if (offer.expires_at && new Date(offer.expires_at) < new Date()) {
+        return NextResponse.json({ ok: false, error: "This code has expired." });
+      }
+      const pct = Number(offer.discount_pct);
+      return NextResponse.json({
+        ok: true,
+        code: entered,
+        type: "winback",
+        discount: pct,
+        freeShipping: !!offer.free_shipping,
+        message: `Code applied! ${Math.round(pct * 100)}% off${offer.free_shipping ? " + free shipping" : ""}.`,
+      });
+    }
+
+    return NextResponse.json({ ok: false, error: "Invalid discount code." });
   } catch (err: any) {
     console.error("redeem-code error:", err);
     return NextResponse.json({ ok: false, error: "Could not validate code. Please try again." }, { status: 500 });
