@@ -35,7 +35,7 @@ export default function AdminOutreach() {
 
   const load = useCallback(async () => { setLoading(true); const d = await call({ action: "list" }); if (d.ok) { setRows(d.prospects); setFunnel(d.funnel); setAngles(d.angles); setAiOn(d.aiOn); const dr: Record<string, Touch> = {}; d.prospects.forEach((p: Prospect) => { const draft = p.touches.find((t) => t.status === "draft"); if (draft) dr[p.id] = draft; }); setDrafts(dr); } else setMsg({ t: d.error || "Failed to load", ok: false }); setLoading(false); }, [call]);
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { fetch("/api/gmail/status").then((r) => r.json()).then(setGmail).catch(() => {}); }, []);
+  useEffect(() => { fetch("/api/gmail/status", { cache: "no-store" }).then((r) => r.json()).then(setGmail).catch(() => {}); }, []);
 
   const sendGmail = async (p: Prospect, t: Touch) => { setBusy(t.id); setMsg(null); await call({ action: "update_touch", touchId: t.id, subject: t.subject, body: t.body }); const d = await call({ action: "send_gmail", touchId: t.id, prospectId: p.id }); setBusy(null); if (d.ok) { setDrafts((x) => { const n = { ...x }; delete n[p.id]; return n; }); setMsg({ t: `Sent to ${p.email} via Gmail.`, ok: true }); load(); } else setMsg({ t: d.error || "Send failed", ok: false }); };
   const checkReplies = async () => { setBusy("replies"); setMsg(null); const d = await call({ action: "check_replies" }); setBusy(null); if (d.ok) { setMsg({ t: `Checked Gmail — ${d.replies} new repl${d.replies === 1 ? "y" : "ies"} found.`, ok: true }); load(); } else setMsg({ t: d.error || "Failed", ok: false }); };
