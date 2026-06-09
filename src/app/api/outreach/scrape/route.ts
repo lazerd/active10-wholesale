@@ -54,11 +54,7 @@ function titleOf(html: string): string {
   return m ? m[1].replace(/\s+/g, " ").trim().slice(0, 120) : "";
 }
 
-async function ddgSearch(query: string): Promise<string[]> {
-  const html = await fetchT(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, 9000);
-  const urls = Array.from(html.matchAll(/uddg=([^&"']+)/g)).map((m) => {
-    try { return decodeURIComponent(m[1]); } catch { return ""; }
-  });
+function candidateHosts(urls: string[]): string[] {
   const hosts: string[] = [];
   const seen = new Set<string>();
   for (const u of urls) {
@@ -71,7 +67,26 @@ async function ddgSearch(query: string): Promise<string[]> {
       hosts.push(`https://${h}`);
     } catch {}
   }
-  return hosts.slice(0, 8);
+  return hosts.slice(0, 10);
+}
+
+// Brave Search API — works from server IPs (proper API, not scraping). Preferred.
+async function braveSearch(query: string): Promise<string[]> {
+  try {
+    const r = await fetch(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=20`, {
+      headers: { Accept: "application/json", "X-Subscription-Token": process.env.BRAVE_API_KEY || "" },
+    });
+    if (!r.ok) { console.error("Brave search failed:", r.status, await r.text()); return []; }
+    const d = await r.json();
+    return candidateHosts((d.web?.results || []).map((x: any) => x.url).filter(Boolean));
+  } catch (e) { console.error("Brave search error", e); return []; }
+}
+
+// DuckDuckGo HTML fallback (often blocked from datacenter IPs).
+async function ddgSearch(query: string): Promise<string[]> {
+  const html = await fetchT(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, 9000);
+  const urls = Array.from(html.matchAll(/uddg=([^&"']+)/g)).map((m) => { try { return decodeURIComponent(m[1]); } catch { return ""; } });
+  return candidateHosts(urls);
 }
 
 async function scrapeSite(base: string, city: string, type: string) {
@@ -100,7 +115,8 @@ export async function POST(req: NextRequest) {
     if (Array.isArray(urls) && urls.length) {
       sites = urls.map((u: string) => (u.startsWith("http") ? u : `https://${u}`)).slice(0, 10);
     } else if (query) {
-      sites = await ddgSearch(query);
+      sites = process.env.BRAVE_API_KEY ? await braveSearch(query) : await ddgSearch(query);
+      if (!sites.length && process.env.BRAVE_API_KEY) sites = await ddgSearch(query); // fallback if Brave returns nothing
     } else {
       return NextResponse.json({ error: "Provide a search query or a list of URLs." }, { status: 400 });
     }

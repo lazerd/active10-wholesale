@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
         won: ps.filter((p) => p.status === "won").length,
         dead: ps.filter((p) => p.status === "dead").length,
       };
-      return NextResponse.json({ ok: true, prospects: rows, funnel, angles, aiOn: !!process.env.GEMINI_API_KEY });
+      return NextResponse.json({ ok: true, prospects: rows, funnel, angles, aiOn: !!process.env.GEMINI_API_KEY, searchOn: !!process.env.BRAVE_API_KEY });
     }
 
     if (action === "generate") {

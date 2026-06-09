@@ -15,6 +15,7 @@ export default function AdminOutreach() {
   const [funnel, setFunnel] = useState<Funnel | null>(null);
   const [angles, setAngles] = useState<{ angle: string; sent: number; replied: number; rate: number }[]>([]);
   const [aiOn, setAiOn] = useState(false);
+  const [searchOn, setSearchOn] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ t: string; ok: boolean } | null>(null);
@@ -33,7 +34,7 @@ export default function AdminOutreach() {
     return r.json();
   }, []);
 
-  const load = useCallback(async () => { setLoading(true); const d = await call({ action: "list" }); if (d.ok) { setRows(d.prospects); setFunnel(d.funnel); setAngles(d.angles); setAiOn(d.aiOn); const dr: Record<string, Touch> = {}; d.prospects.forEach((p: Prospect) => { const draft = p.touches.find((t) => t.status === "draft"); if (draft) dr[p.id] = draft; }); setDrafts(dr); } else setMsg({ t: d.error || "Failed to load", ok: false }); setLoading(false); }, [call]);
+  const load = useCallback(async () => { setLoading(true); const d = await call({ action: "list" }); if (d.ok) { setRows(d.prospects); setFunnel(d.funnel); setAngles(d.angles); setAiOn(d.aiOn); setSearchOn(!!d.searchOn); const dr: Record<string, Touch> = {}; d.prospects.forEach((p: Prospect) => { const draft = p.touches.find((t) => t.status === "draft"); if (draft) dr[p.id] = draft; }); setDrafts(dr); } else setMsg({ t: d.error || "Failed to load", ok: false }); setLoading(false); }, [call]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { fetch("/api/gmail/status", { cache: "no-store" }).then((r) => r.json()).then(setGmail).catch(() => {}); }, []);
 
@@ -85,7 +86,7 @@ export default function AdminOutreach() {
     <div style={{ ...card, padding: 20, marginBottom: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
         <div style={{ fontSize: 14, fontWeight: 700 }}>🔎 Find prospects</div>
-        <div style={{ fontSize: 11, color: aiOn ? GR : "#FFC940" }}>{aiOn ? "✨ Gemini AI pitches ON" : "📝 Template pitches (add GEMINI_API_KEY to enable AI)"}</div>
+        <div style={{ fontSize: 11, display: "flex", gap: 12, flexWrap: "wrap" }}><span style={{ color: aiOn ? GR : "#FFC940" }}>{aiOn ? "✨ Gemini AI pitches ON" : "📝 Template pitches"}</span><span style={{ color: searchOn ? GR : "#FFC940" }}>{searchOn ? "🔎 Brave search ON" : "🔎 Auto-search off (paste URLs)"}</span></div>
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
         <select value={type} onChange={(e) => setType(e.target.value)} style={{ ...inp, flex: "0 0 150px" }}><option value="chiropractor">Chiropractors</option><option value="affiliate">Affiliates</option><option value="other">Other</option></select>
