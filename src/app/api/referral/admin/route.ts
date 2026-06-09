@@ -33,22 +33,37 @@ function announceEmail(name: string) {
   </div>`;
 }
 
-async function isAdmin(req: NextRequest): Promise<boolean> {
+// Returns the admin's email if the caller is an admin, else null.
+async function adminEmail(req: NextRequest): Promise<string | null> {
   const token = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
-  if (!token) return false;
+  if (!token) return null;
   const { data } = await supabaseAdmin.auth.getUser(token);
   const email = data?.user?.email?.toLowerCase();
-  if (!email) return false;
+  if (!email) return null;
   const { data: ad } = await supabaseAdmin.from("admin_emails").select("email").ilike("email", email).single();
-  return !!ad;
+  return ad ? email : null;
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 export async function POST(req: NextRequest) {
   try {
-    if (!(await isAdmin(req))) return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+    const me = await adminEmail(req);
+    if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     const { action } = await req.json();
+
+    if (action === "announce_preview") {
+      return NextResponse.json({ ok: true, html: announceEmail("Dr. Sample"), subject: "New: refer a practice, earn $100 in credit" });
+    }
+
+    if (action === "announce_test") {
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${RESEND_API_KEY}` },
+        body: JSON.stringify({ from: "Active 10 Wholesale <notifications@getactive10.com>", to: me, subject: "[TEST] New: refer a practice, earn $100 in credit", html: announceEmail("Dr. Sample") }),
+      });
+      return res.ok ? NextResponse.json({ ok: true, sentTo: me }) : NextResponse.json({ error: "Test email failed to send" }, { status: 502 });
+    }
 
     if (action === "announce") {
       const { data: actives } = await supabaseAdmin.from("customers").select("id, name, email").eq("status", "active");

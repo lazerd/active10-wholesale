@@ -17,6 +17,7 @@ export default function AdminReferrals() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [announcing, setAnnouncing] = useState(false);
+  const [preview, setPreview] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ t: string; ok: boolean } | null>(null);
 
   const call = useCallback(async (payload: any) => {
@@ -30,6 +31,8 @@ export default function AdminReferrals() {
   useEffect(() => { load(); }, [load]);
 
   const reconcile = async () => { setBusy(true); setMsg(null); const d = await call({ action: "reconcile" }); setBusy(false); if (d.ok) { setMsg({ t: `Reconciled — ${d.granted} new credit${d.granted === 1 ? "" : "s"} granted.`, ok: true }); load(); } else setMsg({ t: d.error || "Failed", ok: false }); };
+  const doPreview = async () => { const d = await call({ action: "announce_preview" }); if (d.ok) setPreview(d.html); else setMsg({ t: d.error || "Failed", ok: false }); };
+  const doTest = async () => { setMsg(null); const d = await call({ action: "announce_test" }); if (d.ok) setMsg({ t: `Test email sent to ${d.sentTo} — check your inbox.`, ok: true }); else setMsg({ t: d.error || "Test failed", ok: false }); };
   const doAnnounce = async () => { if (!announce || announce.pending === 0) return; if (!confirm(`Email the referral program to ${announce.pending} customer${announce.pending === 1 ? "" : "s"} who haven't been told yet?`)) return; setAnnouncing(true); setMsg(null); const d = await call({ action: "announce" }); setAnnouncing(false); if (d.ok) { setMsg({ t: `📣 Announcement sent to ${d.sent} customer${d.sent === 1 ? "" : "s"}.`, ok: true }); load(); } else setMsg({ t: d.error || "Failed to send", ok: false }); };
 
   const card: React.CSSProperties = { background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 14 };
@@ -46,7 +49,11 @@ export default function AdminReferrals() {
 
     {announce && <div style={{ background: `${GR}10`, border: `1px solid ${GR}33`, borderRadius: 14, padding: "16px 20px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
       <div><div style={{ fontSize: 14, fontWeight: 700 }}>📣 Tell your customers about the program</div><div style={{ fontSize: 12, color: "rgba(255,255,255,.5)", marginTop: 2 }}>Emails active customers a "refer a practice, earn $100" invite linking to their Refer &amp; Earn page. {announce.announced} announced · <strong style={{ color: announce.pending > 0 ? GR : "rgba(255,255,255,.5)" }}>{announce.pending} not yet invited</strong></div></div>
-      <button onClick={doAnnounce} disabled={announcing || announce.pending === 0} style={{ padding: "11px 20px", background: announce.pending > 0 ? `linear-gradient(135deg,${GR},#00D2A0)` : "rgba(255,255,255,.06)", border: "none", borderRadius: 10, color: "white", fontWeight: 700, fontSize: 13, cursor: announce.pending > 0 ? "pointer" : "default", opacity: announcing ? 0.5 : 1, whiteSpace: "nowrap" }}>{announcing ? "Sending…" : announce.pending > 0 ? `Email ${announce.pending} Customer${announce.pending === 1 ? "" : "s"}` : "✓ All Invited"}</button>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button onClick={doPreview} style={{ padding: "11px 16px", background: "rgba(255,255,255,.06)", border: `1px solid ${B}33`, borderRadius: 10, color: "rgba(255,255,255,.8)", fontWeight: 600, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>👁 Preview</button>
+        <button onClick={doTest} style={{ padding: "11px 16px", background: "rgba(255,255,255,.06)", border: `1px solid ${B}33`, borderRadius: 10, color: "rgba(255,255,255,.8)", fontWeight: 600, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>✉️ Send test to me</button>
+        <button onClick={doAnnounce} disabled={announcing || announce.pending === 0} style={{ padding: "11px 20px", background: announce.pending > 0 ? `linear-gradient(135deg,${GR},#00D2A0)` : "rgba(255,255,255,.06)", border: "none", borderRadius: 10, color: "white", fontWeight: 700, fontSize: 13, cursor: announce.pending > 0 ? "pointer" : "default", opacity: announcing ? 0.5 : 1, whiteSpace: "nowrap" }}>{announcing ? "Sending…" : announce.pending > 0 ? `Email ${announce.pending} Customer${announce.pending === 1 ? "" : "s"}` : "✓ All Invited"}</button>
+      </div>
     </div>}
 
     {summary && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 12, marginBottom: 20 }}>
@@ -66,5 +73,12 @@ export default function AdminReferrals() {
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}><span style={{ fontSize: 12, color: "rgba(255,255,255,.4)" }}>${r.reward} reward</span><span style={{ fontSize: 13, fontWeight: 700, color: statusColor[r.status] || "white", textTransform: "capitalize" }}>{r.status}</span></div>
         </div>
       ))}</div>}
+
+    {preview && (<div onClick={() => setPreview(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "white", borderRadius: 12, maxWidth: 640, width: "100%", maxHeight: "85vh", overflow: "auto", position: "relative" }}>
+        <button onClick={() => setPreview(null)} style={{ position: "sticky", top: 10, left: "100%", margin: 10, background: "#0072BC", color: "white", border: "none", borderRadius: 6, width: 28, height: 28, cursor: "pointer", fontSize: 16 }}>×</button>
+        <div dangerouslySetInnerHTML={{ __html: preview }} />
+      </div>
+    </div>)}
   </div>);
 }
