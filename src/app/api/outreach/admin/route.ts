@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { generatePitch, nextAngle, ANGLES } from "@/lib/outreachPitch";
+import { getGmailAccess, gmailSend, gmailRepliesFrom } from "@/lib/gmail";
 
 const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
@@ -81,6 +82,40 @@ export async function POST(req: NextRequest) {
       const tc = (p?.touch_count || 0) + 1;
       await supabaseAdmin.from("outreach_prospects").update({ status: tc > 1 ? "followed_up" : "emailed", touch_count: tc, last_contacted_at: new Date().toISOString() }).eq("id", prospectId);
       return NextResponse.json({ ok: true });
+    }
+
+    if (action === "send_gmail") {
+      const { touchId, prospectId } = body;
+      const token = await getGmailAccess();
+      if (!token) return NextResponse.json({ error: "Gmail isn't connected. Connect it in the Outreach tab first." }, { status: 400 });
+      const { data: t } = await supabaseAdmin.from("outreach_touches").select("*").eq("id", touchId).single();
+      const { data: p } = await supabaseAdmin.from("outreach_prospects").select("email, touch_count").eq("id", prospectId).single();
+      if (!t || !p?.email) return NextResponse.json({ error: "Missing prospect email or draft" }, { status: 400 });
+      const ok = await gmailSend(token, p.email, t.subject, t.body);
+      if (!ok) return NextResponse.json({ error: "Gmail failed to send" }, { status: 502 });
+      await supabaseAdmin.from("outreach_touches").update({ status: "sent", sent_at: new Date().toISOString() }).eq("id", touchId);
+      const tc = (p.touch_count || 0) + 1;
+      await supabaseAdmin.from("outreach_prospects").update({ status: tc > 1 ? "followed_up" : "emailed", touch_count: tc, last_contacted_at: new Date().toISOString() }).eq("id", prospectId);
+      return NextResponse.json({ ok: true });
+    }
+
+    if (action === "check_replies") {
+      const token = await getGmailAccess();
+      if (!token) return NextResponse.json({ error: "Gmail isn't connected." }, { status: 400 });
+      const { data: ps } = await supabaseAdmin.from("outreach_prospects").select("id, email, status").in("status", ["emailed", "followed_up"]);
+      const list = (ps || []).filter((p) => p.email);
+      if (!list.length) return NextResponse.json({ ok: true, replies: 0 });
+      const repliedEmails = await gmailRepliesFrom(token, list.map((p) => p.email as string));
+      let replies = 0;
+      for (const p of list) {
+        if (repliedEmails.has((p.email as string).toLowerCase())) {
+          await supabaseAdmin.from("outreach_prospects").update({ status: "replied" }).eq("id", p.id);
+          const { data: lastSent } = await supabaseAdmin.from("outreach_touches").select("id").eq("prospect_id", p.id).eq("status", "sent").order("created_at", { ascending: false }).limit(1).single();
+          if (lastSent) await supabaseAdmin.from("outreach_touches").update({ status: "replied" }).eq("id", lastSent.id);
+          replies++;
+        }
+      }
+      return NextResponse.json({ ok: true, replies });
     }
 
     if (action === "set_status") {

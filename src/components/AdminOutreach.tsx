@@ -24,6 +24,7 @@ export default function AdminOutreach() {
   const [urls, setUrls] = useState("");
   const [drafts, setDrafts] = useState<Record<string, Touch>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [gmail, setGmail] = useState<{ connected: boolean; email: string | null; configured: boolean }>({ connected: false, email: null, configured: false });
 
   const call = useCallback(async (payload: any) => {
     const { data: s } = await supabase.auth.getSession();
@@ -34,6 +35,11 @@ export default function AdminOutreach() {
 
   const load = useCallback(async () => { setLoading(true); const d = await call({ action: "list" }); if (d.ok) { setRows(d.prospects); setFunnel(d.funnel); setAngles(d.angles); setAiOn(d.aiOn); const dr: Record<string, Touch> = {}; d.prospects.forEach((p: Prospect) => { const draft = p.touches.find((t) => t.status === "draft"); if (draft) dr[p.id] = draft; }); setDrafts(dr); } else setMsg({ t: d.error || "Failed to load", ok: false }); setLoading(false); }, [call]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { fetch("/api/gmail/status").then((r) => r.json()).then(setGmail).catch(() => {}); }, []);
+
+  const sendGmail = async (p: Prospect, t: Touch) => { setBusy(t.id); setMsg(null); await call({ action: "update_touch", touchId: t.id, subject: t.subject, body: t.body }); const d = await call({ action: "send_gmail", touchId: t.id, prospectId: p.id }); setBusy(null); if (d.ok) { setDrafts((x) => { const n = { ...x }; delete n[p.id]; return n; }); setMsg({ t: `Sent to ${p.email} via Gmail.`, ok: true }); load(); } else setMsg({ t: d.error || "Send failed", ok: false }); };
+  const checkReplies = async () => { setBusy("replies"); setMsg(null); const d = await call({ action: "check_replies" }); setBusy(null); if (d.ok) { setMsg({ t: `Checked Gmail — ${d.replies} new repl${d.replies === 1 ? "y" : "ies"} found.`, ok: true }); load(); } else setMsg({ t: d.error || "Failed", ok: false }); };
+  const disconnectGmail = async () => { if (!confirm("Disconnect Gmail?")) return; await fetch("/api/gmail/disconnect", { method: "POST" }); setGmail({ connected: false, email: null, configured: gmail.configured }); };
 
   const card: React.CSSProperties = { background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 14 };
   const inp: React.CSSProperties = { padding: "10px 14px", background: "rgba(255,255,255,.06)", border: `1px solid ${B}33`, borderRadius: 10, color: "white", fontSize: 14, outline: "none", boxSizing: "border-box" };
@@ -66,6 +72,15 @@ export default function AdminOutreach() {
   const editDraft = (pid: string, field: "subject" | "body", val: string) => setDrafts((x) => ({ ...x, [pid]: { ...x[pid], [field]: val } }));
 
   return (<div>
+    {/* Gmail connection */}
+    <div style={{ ...card, padding: "12px 18px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, background: gmail.connected ? `${GR}10` : "rgba(255,255,255,.03)", borderColor: gmail.connected ? `${GR}33` : `${B}22` }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontSize: 18 }}>📬</span><div><div style={{ fontSize: 13, fontWeight: 700, color: gmail.connected ? GR : "rgba(255,255,255,.7)" }}>Gmail {gmail.connected ? `connected · ${gmail.email}` : "not connected"}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,.4)" }}>{gmail.connected ? "Send pitches & auto-detect replies." : gmail.configured ? "Connect to send & track replies automatically." : "Add GOOGLE_CLIENT_ID/SECRET in Vercel to enable."}</div></div></div>
+      <div style={{ display: "flex", gap: 8 }}>
+        {gmail.connected && <button onClick={checkReplies} disabled={busy === "replies"} style={{ ...btnP, opacity: busy === "replies" ? 0.5 : 1 }}>{busy === "replies" ? "Checking…" : "🔄 Check Replies"}</button>}
+        {gmail.connected ? <button onClick={disconnectGmail} style={btnS}>Disconnect</button> : gmail.configured ? <a href="/api/gmail/connect" style={{ ...btnP, textDecoration: "none" }}>Connect Gmail</a> : null}
+      </div>
+    </div>
+
     {/* Finder */}
     <div style={{ ...card, padding: 20, marginBottom: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
@@ -117,6 +132,7 @@ export default function AdminOutreach() {
             <input value={draft.subject} onChange={(e) => editDraft(p.id, "subject", e.target.value)} style={{ ...inp, width: "100%", fontWeight: 600, marginBottom: 8 }} />
             <textarea value={draft.body} onChange={(e) => editDraft(p.id, "body", e.target.value)} rows={8} style={{ ...inp, width: "100%", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }} />
             <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+              {gmail.connected && p.email && <button onClick={() => sendGmail(p, draft)} disabled={busy === draft.id} style={{ ...btnP, background: `linear-gradient(135deg,${GR},#00D2A0)`, opacity: busy === draft.id ? 0.5 : 1 }}>{busy === draft.id ? "Sending…" : "📨 Send via Gmail"}</button>}
               <button onClick={() => copyEmail(p, draft)} style={btnP}>{copiedId === draft.id ? "✓ Copied" : "📋 Copy for Gmail"}</button>
               <button onClick={() => markSent(p, draft)} style={{ ...btnS, color: GR, borderColor: `${GR}55` }}>✓ Mark as Sent</button>
               <button onClick={() => generate(p)} disabled={busy === p.id} style={btnS}>↻ Regenerate</button>
