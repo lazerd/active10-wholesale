@@ -71,8 +71,8 @@ export default function AffiliateDashboard({ onLogout }: { onLogout: () => void 
         {stat("Paid to Date", `$${data.stats.paidOut.toFixed(2)}`, "rgba(255,255,255,.85)")}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 20, marginBottom: 24, alignItems: "stretch" }}>
-        <div style={card}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 20, marginBottom: 24, alignItems: "stretch" }}>
+        <div style={{ ...card, flex: "1 1 280px", minWidth: 0 }}>
           <div style={{ fontSize: 11, color: "rgba(255,255,255,.4)", textTransform: "uppercase", letterSpacing: ".8px", marginBottom: 12 }}>Your Referral Link</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <input readOnly value={data.referralUrl} onFocus={(e) => e.currentTarget.select()} style={{ flex: 1, minWidth: 220, padding: "12px 14px", background: "rgba(255,255,255,.06)", border: `1px solid ${B}33`, borderRadius: 10, color: "white", fontSize: 14 }} />
@@ -80,8 +80,8 @@ export default function AffiliateDashboard({ onLogout }: { onLogout: () => void 
           </div>
           <p style={{ fontSize: 13, color: "rgba(255,255,255,.45)", marginTop: 14, lineHeight: 1.6 }}>Share this link (or the QR code) with practices you know. When they sign up and order, your commission shows up here automatically.</p>
         </div>
-        <div style={{ ...card, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10 }}>
-          {qr ? <img src={qr} alt="Referral QR code" style={{ width: 150, height: 150, borderRadius: 10, background: "white", padding: 6 }} /> : <div style={{ width: 150, height: 150 }} />}
+        <div style={{ ...card, flex: "1 1 200px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10 }}>
+          {qr ? <img src={qr} alt="Referral QR code" style={{ width: 180, height: 180, maxWidth: "100%", borderRadius: 10, background: "white", padding: 6 }} /> : <div style={{ width: 180, height: 180 }} />}
           <button onClick={downloadQr} style={btnS}>⬇ Download QR</button>
         </div>
       </div>

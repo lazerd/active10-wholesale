@@ -8,6 +8,7 @@ import AdminRestock from "@/components/AdminRestock";
 import AdminAbandoned from "@/components/AdminAbandoned";
 import AdminReferrals from "@/components/AdminReferrals";
 import CustomerReferral from "@/components/CustomerReferral";
+import AdminOutreach from "@/components/AdminOutreach";
 
 const B = "#0072BC", BL = "#0088DD", BD = "#005A96", BBG = "#003A5C", BDP = "#00253D", GR = "#00B894";
 
@@ -205,7 +206,8 @@ export default function App() {
     try {
       const r = await fetch("/api/redeem-code", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ customerId: customer.id, code }) });
       const d = await r.json();
-      if (d.ok) { setAppliedCode(d.code || code.toUpperCase()); setAppliedPct(Number(d.discount) || 0); setAppliedFreeShip(!!d.freeShipping); setAppliedType(d.type || ""); setAppliedSamples(Number(d.samplePackets) || 0); setCodeMsg({ text: d.message || "Code applied!", ok: true }); }
+      if (d.ok && Number(d.minOrder) > 0 && wsSub < Number(d.minOrder)) { setAppliedCode(""); setAppliedPct(0); setAppliedFreeShip(false); setAppliedType(""); setAppliedSamples(0); setCodeMsg({ text: `This welcome offer needs a $${Number(d.minOrder).toFixed(0)}+ order (you're at $${wsSub.toFixed(2)}). Add $${(Number(d.minOrder) - wsSub).toFixed(2)} more to unlock it.`, ok: false }); }
+      else if (d.ok) { setAppliedCode(d.code || code.toUpperCase()); setAppliedPct(Number(d.discount) || 0); setAppliedFreeShip(!!d.freeShipping); setAppliedType(d.type || ""); setAppliedSamples(Number(d.samplePackets) || 0); setCodeMsg({ text: d.message || "Code applied!", ok: true }); }
       else { setAppliedCode(""); setAppliedPct(0); setAppliedFreeShip(false); setAppliedType(""); setAppliedSamples(0); setCodeMsg({ text: d.error || "Invalid code.", ok: false }); }
     } catch { setCodeMsg({ text: "Could not validate code. Try again.", ok: false }); }
     setCodeChecking(false);
@@ -223,6 +225,7 @@ export default function App() {
         const r = await fetch("/api/redeem-code", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ customerId: customer.id, code: appliedCode }) });
         const d = await r.json();
         if (!d.ok) { useCode = ""; setAppliedCode(""); setCodeMsg({ text: d.error || "Code no longer valid.", ok: false }); setOrderSubmitting(false); return; }
+        if (Number(d.minOrder) > 0 && wsSub < Number(d.minOrder)) { setCodeMsg({ text: `This welcome offer needs a $${Number(d.minOrder).toFixed(0)}+ order. Add $${(Number(d.minOrder) - wsSub).toFixed(2)} more.`, ok: false }); setOrderSubmitting(false); return; }
       } catch { setOrderSubmitting(false); alert("Could not verify your discount code. Please try again."); return; }
     }
     const oi: OrderItem[] = items.map(([id, q]) => { const p = products.find(p => p.id === id)!; const up = fp(p.retail, effDisc); return { product_id: id, name: p.name, qty: q, unit_price: up, line_total: up * q }; });
@@ -450,7 +453,7 @@ const submitManualOrder = async () => { if (!manualCustomerId) { alert("Select a
         <div style={{ background: qbConnected ? "rgba(0,184,148,.08)" : "rgba(255,255,255,.04)", border: `1px solid ${qbConnected ? "rgba(0,184,148,.25)" : "rgba(0,114,188,.2)"}`, borderRadius: 12, padding: "12px 18px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}><div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontSize: 18 }}>📗</span><div><div style={{ fontSize: 13, fontWeight: 600, color: qbConnected ? "#00B894" : "rgba(255,255,255,.6)" }}>QuickBooks {qbConnected ? "Connected" : "Not Connected"}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,.35)" }}>{qbConnected ? "Sync customers & create invoices" : "Connect to push data to QBO"}</div></div></div>{qbConnected ? <button onClick={disconnectQB} style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid rgba(255,80,80,.3)", background: "rgba(255,80,80,.08)", color: "#FF6B6B", fontSize: 12, fontWeight: 500, cursor: "pointer" }}>Disconnect</button> : <a href="/api/qb/connect" style={{ padding: "8px 18px", borderRadius: 8, background: "linear-gradient(135deg,#2CA01C,#48BB78)", color: "white", fontSize: 12, fontWeight: 600, textDecoration: "none" }}>Connect QuickBooks</a>}</div>
         {qbMessage && <div style={{ background: qbMessage.ok ? "rgba(0,184,148,.1)" : "rgba(255,80,80,.1)", border: `1px solid ${qbMessage.ok ? "rgba(0,184,148,.3)" : "rgba(255,80,80,.3)"}`, borderRadius: 8, padding: "10px 14px", marginBottom: 12, fontSize: 13, color: qbMessage.ok ? "#00B894" : "#FF6B6B", display: "flex", justifyContent: "space-between", alignItems: "center" }}><span>{qbMessage.text}</span><button onClick={() => setQbMessage(null)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: 16 }}>×</button></div>}
 
-        <div style={{ display: "flex", gap: 4, marginBottom: 24, background: "rgba(255,255,255,.03)", borderRadius: 12, padding: 4 }}>{["customers", "applicants", "orders", "affiliates", "winback", "restock", "abandoned", "referrals"].map(t => <button key={t} onClick={() => { setAdminTab(t); setSelectedCustomer(null); setExpandedOrder(null); setEditingOrderId(null); }} style={{ flex: 1, padding: "10px 10px", borderRadius: 10, border: "none", background: adminTab === t ? `${B}33` : "transparent", color: adminTab === t ? "white" : "rgba(255,255,255,.5)", fontWeight: 600, fontSize: 12, cursor: "pointer", textTransform: "capitalize", transition: "all .2s", whiteSpace: "nowrap" }}>{t === "winback" ? "Win-Back" : t === "abandoned" ? "Carts" : t}{t === "applicants" && pending.length > 0 ? ` (${pending.length})` : ""}</button>)}</div>
+        <div style={{ display: "flex", gap: 4, marginBottom: 24, background: "rgba(255,255,255,.03)", borderRadius: 12, padding: 4 }}>{["customers", "applicants", "orders", "affiliates", "winback", "restock", "abandoned", "referrals", "outreach"].map(t => <button key={t} onClick={() => { setAdminTab(t); setSelectedCustomer(null); setExpandedOrder(null); setEditingOrderId(null); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 10, border: "none", background: adminTab === t ? `${B}33` : "transparent", color: adminTab === t ? "white" : "rgba(255,255,255,.5)", fontWeight: 600, fontSize: 11.5, cursor: "pointer", textTransform: "capitalize", transition: "all .2s", whiteSpace: "nowrap" }}>{t === "winback" ? "Win-Back" : t === "abandoned" ? "Carts" : t === "outreach" ? "Outreach" : t}{t === "applicants" && pending.length > 0 ? ` (${pending.length})` : ""}</button>)}</div>
 
         {adminTab === "customers" && !selectedCustomer && (<div>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 14 }}><button onClick={() => { setAddingCustomer(true); setAddCustError(""); }} className="bh" style={{ ...btnP, display: "flex", alignItems: "center", gap: 6 }}><span>➕</span> Add Customer</button><button onClick={exportCustomersCSV} className="bh" style={{ ...btnS, display: "flex", alignItems: "center", gap: 6 }}><span style={{ fontSize: 15 }}>📥</span> Export (CSV)</button></div>
@@ -540,6 +543,7 @@ const submitManualOrder = async () => { if (!manualCustomerId) { alert("Select a
         {adminTab === "restock" && <AdminRestock />}
         {adminTab === "abandoned" && <AdminAbandoned />}
         {adminTab === "referrals" && <AdminReferrals />}
+        {adminTab === "outreach" && <AdminOutreach />}
       </div>
     </div>);
   }

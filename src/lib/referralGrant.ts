@@ -1,12 +1,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const PAYABLE = ["confirmed", "shipped", "delivered"];
+const MIN_QUALIFYING_SUBTOTAL = 100; // referred practice's first order must be $100+ (pre-discount)
 
 // Grants the referrer their store credit once the referred practice's order is
-// confirmed. Idempotent: only fires when a referral is still 'joined'.
+// confirmed AND meets the $100 minimum. Idempotent: only fires when a referral
+// is still 'joined'.
 export async function grantReferralForOrder(admin: SupabaseClient, orderId: string) {
-  const { data: order } = await admin.from("orders").select("id, customer_id, status").eq("id", orderId).single();
+  const { data: order } = await admin.from("orders").select("id, customer_id, status, subtotal").eq("id", orderId).single();
   if (!order || !PAYABLE.includes(order.status)) return { granted: false };
+  if (Number(order.subtotal) < MIN_QUALIFYING_SUBTOTAL) return { granted: false, reason: "below_minimum" };
 
   const { data: cust } = await admin.from("customers").select("id, referred_by_customer_id").eq("id", order.customer_id).single();
   if (!cust || !cust.referred_by_customer_id) return { granted: false };

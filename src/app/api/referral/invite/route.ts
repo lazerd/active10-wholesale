@@ -19,7 +19,8 @@ function inviteEmail(referrerName: string, referrerBusiness: string, link: strin
         <p style="color:#444;font-size:14px;line-height:1.7;margin:0 0 18px;"><strong>${referrerName}</strong>${referrerBusiness ? ` from ${referrerBusiness}` : ""} thought your practice would love Active 10's wholesale program — and set you up with a welcome offer:</p>
         <div style="background:#f0f7ff;border:2px dashed #0072BC;border-radius:12px;padding:22px;text-align:center;margin-bottom:20px;">
           <div style="font-size:26px;font-weight:900;color:#0072BC;line-height:1.2;">20% OFF + FREE SHIPPING</div>
-          <div style="font-size:14px;color:#0072BC;font-weight:600;margin-top:6px;">plus 25 FREE sample packets on your first order</div>
+          <div style="font-size:14px;color:#0072BC;font-weight:600;margin-top:6px;">plus 25 FREE sample packets</div>
+          <div style="font-size:12px;color:#7a9bb5;margin-top:8px;">on your first order of $100 or more</div>
         </div>
         <div style="text-align:center;margin:24px 0;">
           <a href="${link}" style="background:#0072BC;color:#fff;padding:14px 36px;border-radius:8px;text-decoration:none;font-weight:700;display:inline-block;font-size:15px;">Claim Your Welcome Offer</a>

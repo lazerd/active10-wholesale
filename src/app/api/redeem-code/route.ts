@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
     // 2) A personal win-back code: must belong to this customer, be sent, unredeemed, unexpired.
     const { data: offer } = await supabaseAdmin
       .from("winback_offers")
-      .select("id, customer_id, discount_pct, free_shipping, status, expires_at, sample_packets")
+      .select("id, customer_id, discount_pct, free_shipping, status, expires_at, sample_packets, kind")
       .ilike("code", entered)
       .single();
 
@@ -70,6 +70,7 @@ export async function POST(req: NextRequest) {
       }
       const pct = Number(offer.discount_pct);
       const samples = Number(offer.sample_packets || 0);
+      const minOrder = offer.kind === "referral_welcome" ? 100 : 0; // referral welcome requires $100+ first order
       const extras = [offer.free_shipping ? "free shipping" : "", samples > 0 ? `${samples} free sample packets` : ""].filter(Boolean).join(" + ");
       return NextResponse.json({
         ok: true,
@@ -78,6 +79,7 @@ export async function POST(req: NextRequest) {
         discount: pct,
         freeShipping: !!offer.free_shipping,
         samplePackets: samples,
+        minOrder,
         message: `Code applied! ${Math.round(pct * 100)}% off${extras ? " + " + extras : ""}.`,
       });
     }

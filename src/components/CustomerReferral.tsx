@@ -71,7 +71,7 @@ export default function CustomerReferral({ onBack }: { onBack: () => void }) {
     <div style={{ maxWidth: 920, margin: "0 auto", padding: "28px 24px 80px" }}>
       <div style={{ textAlign: "center", marginBottom: 28 }}>
         <h1 style={{ fontFamily: "'Playfair Display',serif", fontSize: 30, marginBottom: 8 }}>Refer a practice, earn $100</h1>
-        <p style={{ color: "rgba(255,255,255,.6)", fontSize: 15, lineHeight: 1.6, maxWidth: 560, margin: "0 auto" }}>Know another practice that would love Active 10? They get <strong style={{ color: "white" }}>20% off + free shipping + 25 free sample packets</strong> on their first order. You get <strong style={{ color: GR }}>$100 in account credit</strong> once they place it.</p>
+        <p style={{ color: "rgba(255,255,255,.6)", fontSize: 15, lineHeight: 1.6, maxWidth: 560, margin: "0 auto" }}>Know another practice that would love Active 10? They get <strong style={{ color: "white" }}>20% off + free shipping + 25 free sample packets</strong> on their first order of $100+. You get <strong style={{ color: GR }}>$100 in account credit</strong> once that order is confirmed.</p>
       </div>
 
       {data && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 14, marginBottom: 24 }}>
@@ -80,8 +80,8 @@ export default function CustomerReferral({ onBack }: { onBack: () => void }) {
         <div style={{ ...card, textAlign: "center" }}><div style={{ fontSize: 11, color: "rgba(255,255,255,.4)", textTransform: "uppercase", letterSpacing: ".8px", marginBottom: 6 }}>Practices Referred</div><div style={{ fontSize: 30, fontWeight: 800, color: BL }}>{data.referrals.length}</div></div>
       </div>}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 20, marginBottom: 24 }}>
-        <div style={card}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 20, marginBottom: 24 }}>
+        <div style={{ ...card, flex: "1 1 280px", minWidth: 0 }}>
           <div style={{ fontSize: 11, color: "rgba(255,255,255,.4)", textTransform: "uppercase", letterSpacing: ".8px", marginBottom: 12 }}>Share your link</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18 }}>
             <input readOnly value={data?.referralUrl || ""} onFocus={(e) => e.currentTarget.select()} style={{ ...inp, flex: 1, minWidth: 200 }} />
@@ -97,8 +97,8 @@ export default function CustomerReferral({ onBack }: { onBack: () => void }) {
             </div>
           </div>
         </div>
-        <div style={{ ...card, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10 }}>
-          {qr ? <img src={qr} alt="Referral QR" style={{ width: 150, height: 150, borderRadius: 10, background: "white", padding: 6 }} /> : <div style={{ width: 150, height: 150 }} />}
+        <div style={{ ...card, flex: "1 1 200px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10 }}>
+          {qr ? <img src={qr} alt="Referral QR" style={{ width: 180, height: 180, maxWidth: "100%", borderRadius: 10, background: "white", padding: 6 }} /> : <div style={{ width: 180, height: 180 }} />}
           <button onClick={downloadQr} style={btnS}>⬇ QR Code</button>
         </div>
       </div>
