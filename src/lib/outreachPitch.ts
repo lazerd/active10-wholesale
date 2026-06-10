@@ -131,6 +131,8 @@ Return ONLY valid JSON: {"subject":"...","body":"..."} with \\n for line breaks 
   return null;
 }
 
-export async function generatePitch(p: Prospect, angle: string, opts: PitchOpts = {}): Promise<Pitch> {
-  return (await geminiPitch(p, angle, opts)) || templatePitch(p, angle);
+export async function generatePitch(p: Prospect, angle: string, opts: PitchOpts = {}): Promise<Pitch & { source: "ai" | "template" }> {
+  const ai = await geminiPitch(p, angle, opts);
+  if (ai) return { ...ai, source: "ai" };
+  return { ...templatePitch(p, angle), source: "template" };
 }
