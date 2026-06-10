@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
       const angle = body.angle && (ANGLES[p.type || "chiropractor"] || ANGLES.other).some((a) => a.key === body.angle) ? body.angle : nextAngle(p.type || "chiropractor", used);
       const pitch = await generatePitch({ name: p.name, business: p.business, city: p.city, type: p.type }, angle, { tone: body.tone, length: body.length, instructions: body.instructions });
       const { data: touch } = await supabaseAdmin.from("outreach_touches").insert({ prospect_id: prospectId, angle, subject: pitch.subject, body: pitch.body, status: "draft" }).select().single();
-      return NextResponse.json({ ok: true, touch, source: pitch.source, aiKey: !!process.env.GEMINI_API_KEY, angleLabel: (ANGLES[p.type || "chiropractor"] || ANGLES.other).find((a) => a.key === angle)?.label || angle });
+      return NextResponse.json({ ok: true, touch, source: pitch.source, aiError: pitch.aiError || null, aiKey: !!process.env.GEMINI_API_KEY, angleLabel: (ANGLES[p.type || "chiropractor"] || ANGLES.other).find((a) => a.key === angle)?.label || angle });
     }
 
     if (action === "update_touch") {

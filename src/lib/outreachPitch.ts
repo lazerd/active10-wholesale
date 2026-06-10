@@ -82,9 +82,9 @@ const TONES: Record<string, string> = {
   professional: "polished and professional, but still personable (not stiff or corporate)",
 };
 
-async function geminiPitch(p: Prospect, angle: string, opts: PitchOpts = {}): Promise<Pitch | null> {
+async function geminiPitch(p: Prospect, angle: string, opts: PitchOpts = {}): Promise<Pitch | { error: string }> {
   const key = process.env.GEMINI_API_KEY;
-  if (!key) return null;
+  if (!key) return { error: "no GEMINI_API_KEY" };
   const angleHint: Record<string, string> = {
     margin: "they can stock our products and resell to patients at a ~50%-off-retail wholesale margin (extra revenue + helps patients between visits)",
     pull_through: "we give free patient sample packets that create take-home demand, so patients come back asking to buy and the practice reorders",
@@ -116,23 +116,41 @@ BANNED (never use): "I hope this email finds you well", "I hope you're doing wel
 ${opts.instructions ? `\nExtra direction from Darrin (follow this): ${opts.instructions}\n` : ""}
 Return ONLY valid JSON: {"subject":"...","body":"..."} with \\n for line breaks in the body.`;
 
-  try {
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.95, topP: 0.95 } }),
-    });
-    const d = await r.json();
-    let txt: string = d?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    txt = txt.replace(/```json|```/g, "").trim();
-    const parsed = JSON.parse(txt);
-    if (parsed.subject && parsed.body) return { subject: String(parsed.subject), body: String(parsed.body) };
-  } catch {}
-  return null;
+  // Try current model names in order — Google retires/renames these periodically.
+  const MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest", "gemini-1.5-flash"];
+  let lastError = "";
+  for (const model of MODELS) {
+    try {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          // Force strict JSON output so parsing can't fail on prose/markdown.
+          generationConfig: { temperature: 0.95, topP: 0.95, responseMimeType: "application/json" },
+        }),
+      });
+      if (!r.ok) {
+        lastError = `${model}: HTTP ${r.status} ${(await r.text()).slice(0, 200)}`;
+        console.error("Gemini error:", lastError);
+        continue; // next model
+      }
+      const d = await r.json();
+      let txt: string = d?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      txt = txt.replace(/```json|```/g, "").trim();
+      const parsed = JSON.parse(txt);
+      if (parsed.subject && parsed.body) return { subject: String(parsed.subject), body: String(parsed.body) };
+      lastError = `${model}: empty/invalid JSON in response`;
+    } catch (e: any) {
+      lastError = `${model}: ${String(e?.message || e).slice(0, 200)}`;
+      console.error("Gemini error:", lastError);
+    }
+  }
+  return { error: lastError };
 }
 
-export async function generatePitch(p: Prospect, angle: string, opts: PitchOpts = {}): Promise<Pitch & { source: "ai" | "template" }> {
+export async function generatePitch(p: Prospect, angle: string, opts: PitchOpts = {}): Promise<Pitch & { source: "ai" | "template"; aiError?: string }> {
   const ai = await geminiPitch(p, angle, opts);
-  if (ai) return { ...ai, source: "ai" };
-  return { ...templatePitch(p, angle), source: "template" };
+  if (!("error" in ai)) return { ...ai, source: "ai" };
+  return { ...templatePitch(p, angle), source: "template", aiError: ai.error };
 }
