@@ -49,7 +49,13 @@ export async function POST(req: NextRequest) {
         won: ps.filter((p) => p.status === "won").length,
         dead: ps.filter((p) => p.status === "dead").length,
       };
-      return NextResponse.json({ ok: true, prospects: rows, funnel, angles, aiOn: !!process.env.GEMINI_API_KEY, searchOn: !!process.env.BRAVE_API_KEY });
+      const { data: settings } = await supabaseAdmin.from("outreach_settings").select("standing_instructions").eq("id", "default").single();
+      return NextResponse.json({ ok: true, prospects: rows, funnel, angles, aiOn: !!process.env.GEMINI_API_KEY, searchOn: !!process.env.BRAVE_API_KEY, standingInstructions: settings?.standing_instructions || "" });
+    }
+
+    if (action === "save_settings") {
+      await supabaseAdmin.from("outreach_settings").upsert({ id: "default", standing_instructions: String(body.standing_instructions || ""), updated_at: new Date().toISOString() });
+      return NextResponse.json({ ok: true });
     }
 
     if (action === "generate") {
@@ -62,7 +68,10 @@ export async function POST(req: NextRequest) {
       await supabaseAdmin.from("outreach_touches").delete().eq("prospect_id", prospectId).eq("status", "draft");
       // Optional steering: explicit angle override + tone/length/custom instructions.
       const angle = body.angle && (ANGLES[p.type || "chiropractor"] || ANGLES.other).some((a) => a.key === body.angle) ? body.angle : nextAngle(p.type || "chiropractor", used);
-      const pitch = await generatePitch({ name: p.name, business: p.business, city: p.city, type: p.type }, angle, { tone: body.tone, length: body.length, instructions: body.instructions });
+      // Standing instructions (saved rules) always apply; one-off direction is appended after.
+      const { data: cfg } = await supabaseAdmin.from("outreach_settings").select("standing_instructions").eq("id", "default").single();
+      const merged = [cfg?.standing_instructions, body.instructions].filter(Boolean).join("\n");
+      const pitch = await generatePitch({ name: p.name, business: p.business, city: p.city, type: p.type }, angle, { tone: body.tone, length: body.length, instructions: merged || undefined });
       const { data: touch } = await supabaseAdmin.from("outreach_touches").insert({ prospect_id: prospectId, angle, subject: pitch.subject, body: pitch.body, status: "draft" }).select().single();
       return NextResponse.json({ ok: true, touch, source: pitch.source, aiError: pitch.aiError || null, aiKey: !!process.env.GEMINI_API_KEY, angleLabel: (ANGLES[p.type || "chiropractor"] || ANGLES.other).find((a) => a.key === angle)?.label || angle });
     }

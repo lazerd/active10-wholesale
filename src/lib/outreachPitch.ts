@@ -110,7 +110,7 @@ What makes it work (follow strictly):
 - Open with something specific to them; do NOT open with pleasantries.
 - Exactly ONE ask, and make it a low-friction yes (e.g. "want me to send a sample pack?" / "worth a quick look?") — not a hard sell.
 - Use contractions and plain words. No adjectives stacked up. At most one exclamation point.
-- Sign off simply as just "Darrin".
+- Sign off simply as just "Darrin" (unless the extra direction below specifies a different signature — then use that exactly).
 
 BANNED (never use): "I hope this email finds you well", "I hope you're doing well", "I'm reaching out", "I wanted to reach out", "in today's", "fast-paced", "elevate", "seamless", "cutting-edge", "innovative", "exciting opportunity", "game-changer", "leverage", "synergy", "passionate about", "revolutionary", "unlock", "—" em-dashes, and corporate buzzwords. No fake personalization you can't back up.
 ${opts.instructions ? `\nExtra direction from Darrin (follow this): ${opts.instructions}\n` : ""}

@@ -29,6 +29,9 @@ export default function AdminOutreach() {
   const [tone, setTone] = useState("human");
   const [length, setLength] = useState("short");
   const [instructions, setInstructions] = useState("");
+  const [standing, setStanding] = useState("");
+  const [standingSaved, setStandingSaved] = useState(true);
+  const [savingStanding, setSavingStanding] = useState(false);
 
   const call = useCallback(async (payload: any) => {
     const { data: s } = await supabase.auth.getSession();
@@ -37,7 +40,7 @@ export default function AdminOutreach() {
     return r.json();
   }, []);
 
-  const load = useCallback(async () => { setLoading(true); const d = await call({ action: "list" }); if (d.ok) { setRows(d.prospects); setFunnel(d.funnel); setAngles(d.angles); setAiOn(d.aiOn); setSearchOn(!!d.searchOn); const dr: Record<string, Touch> = {}; d.prospects.forEach((p: Prospect) => { const draft = p.touches.find((t) => t.status === "draft"); if (draft) dr[p.id] = draft; }); setDrafts(dr); } else setMsg({ t: d.error || "Failed to load", ok: false }); setLoading(false); }, [call]);
+  const load = useCallback(async () => { setLoading(true); const d = await call({ action: "list" }); if (d.ok) { setRows(d.prospects); setFunnel(d.funnel); setAngles(d.angles); setAiOn(d.aiOn); setSearchOn(!!d.searchOn); setStanding(d.standingInstructions || ""); setStandingSaved(true); const dr: Record<string, Touch> = {}; d.prospects.forEach((p: Prospect) => { const draft = p.touches.find((t) => t.status === "draft"); if (draft) dr[p.id] = draft; }); setDrafts(dr); } else setMsg({ t: d.error || "Failed to load", ok: false }); setLoading(false); }, [call]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { fetch("/api/gmail/status", { cache: "no-store" }).then((r) => r.json()).then(setGmail).catch(() => {}); }, []);
 
@@ -74,6 +77,7 @@ export default function AdminOutreach() {
   const del = async (p: Prospect) => { if (!confirm(`Remove ${p.business || p.email}?`)) return; await call({ action: "delete", prospectId: p.id }); load(); };
 
   const editDraft = (pid: string, field: "subject" | "body", val: string) => setDrafts((x) => ({ ...x, [pid]: { ...x[pid], [field]: val } }));
+  const saveStanding = async () => { setSavingStanding(true); const d = await call({ action: "save_settings", standing_instructions: standing }); setSavingStanding(false); if (d.ok) { setStandingSaved(true); setMsg({ t: "Standing rules saved — they'll apply to every pitch from now on.", ok: true }); } else setMsg({ t: d.error || "Save failed", ok: false }); };
 
   return (<div>
     {/* Gmail connection */}
@@ -122,7 +126,15 @@ export default function AdminOutreach() {
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <select value={tone} onChange={(e) => setTone(e.target.value)} style={{ ...inp, flex: "0 0 auto" }}><option value="human">Tone: Warm &amp; human</option><option value="casual">Tone: Casual &amp; friendly</option><option value="direct">Tone: Direct &amp; punchy</option><option value="professional">Tone: Professional</option></select>
         <select value={length} onChange={(e) => setLength(e.target.value)} style={{ ...inp, flex: "0 0 auto" }}><option value="tiny">Length: Very short</option><option value="short">Length: Short</option><option value="medium">Length: Medium</option></select>
-        <input value={instructions} onChange={(e) => setInstructions(e.target.value)} placeholder="Your angle / direction, e.g. 'mention we're local & family-owned; lead with the patient-retail margin; keep it 2 lines'" style={{ ...inp, flex: "1 1 280px" }} />
+        <input value={instructions} onChange={(e) => setInstructions(e.target.value)} placeholder="One-off direction for the next pitch, e.g. 'lead with the patient-retail margin; keep it 2 lines'" style={{ ...inp, flex: "1 1 280px" }} />
+      </div>
+      <div style={{ marginTop: 12 }}>
+        <div style={{ fontSize: 11, color: "rgba(255,255,255,.4)", textTransform: "uppercase", letterSpacing: ".8px", marginBottom: 6 }}>📌 Standing rules <span style={{ textTransform: "none", letterSpacing: 0, color: "rgba(255,255,255,.3)" }}>— saved permanently, applied to every pitch</span></div>
+        <textarea value={standing} onChange={(e) => { setStanding(e.target.value); setStandingSaved(false); }} rows={3} placeholder={'e.g.\nSign as: Darrin, then "Active Formulations Inc. CEO" on the next line\nAlways mention we are family-owned\nNever use the word "synergy"'} style={{ ...inp, width: "100%", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
+          <button onClick={saveStanding} disabled={savingStanding || standingSaved} style={{ ...btnP, opacity: savingStanding || standingSaved ? 0.5 : 1 }}>{savingStanding ? "Saving…" : standingSaved ? "✓ Saved" : "Save Rules"}</button>
+          {!standingSaved && <span style={{ fontSize: 12, color: "#FFC940" }}>Unsaved changes</span>}
+        </div>
       </div>
     </div>}
 
