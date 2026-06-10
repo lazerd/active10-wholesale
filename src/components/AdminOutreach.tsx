@@ -26,6 +26,9 @@ export default function AdminOutreach() {
   const [drafts, setDrafts] = useState<Record<string, Touch>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [gmail, setGmail] = useState<{ connected: boolean; email: string | null; configured: boolean }>({ connected: false, email: null, configured: false });
+  const [tone, setTone] = useState("human");
+  const [length, setLength] = useState("short");
+  const [instructions, setInstructions] = useState("");
 
   const call = useCallback(async (payload: any) => {
     const { data: s } = await supabase.auth.getSession();
@@ -64,7 +67,7 @@ export default function AdminOutreach() {
     load();
   };
 
-  const generate = async (p: Prospect) => { setBusy(p.id); setMsg(null); const d = await call({ action: "generate", prospectId: p.id }); setBusy(null); if (d.ok) { setDrafts((x) => ({ ...x, [p.id]: d.touch })); } else setMsg({ t: d.error || "Failed", ok: false }); };
+  const generate = async (p: Prospect) => { setBusy(p.id); setMsg(null); const d = await call({ action: "generate", prospectId: p.id, tone, length, instructions: instructions.trim() || undefined }); setBusy(null); if (d.ok) { setDrafts((x) => ({ ...x, [p.id]: d.touch })); } else setMsg({ t: d.error || "Failed", ok: false }); };
   const copyEmail = (p: Prospect, t: Touch) => { navigator.clipboard?.writeText(`Subject: ${t.subject}\n\n${t.body}`); setCopiedId(t.id); setTimeout(() => setCopiedId(null), 1800); };
   const markSent = async (p: Prospect, t: Touch) => { await call({ action: "update_touch", touchId: t.id, subject: t.subject, body: t.body }); await call({ action: "mark_sent", touchId: t.id, prospectId: p.id }); setDrafts((x) => { const n = { ...x }; delete n[p.id]; return n; }); load(); };
   const setStatus = async (p: Prospect, status: string) => { const lastSent = [...p.touches].find((t) => t.status === "sent"); await call({ action: "set_status", prospectId: p.id, status, touchId: status === "replied" ? lastSent?.id : undefined }); load(); };
@@ -112,6 +115,15 @@ export default function AdminOutreach() {
     {angles.length > 0 && <div style={{ ...card, padding: "12px 16px", marginBottom: 16 }}>
       <div style={{ fontSize: 11, color: "rgba(255,255,255,.4)", textTransform: "uppercase", letterSpacing: ".8px", marginBottom: 8 }}>🏆 Winning angles (reply rate)</div>
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>{angles.map((a) => <div key={a.angle} style={{ fontSize: 13 }}><span style={{ color: "white", fontWeight: 600, textTransform: "capitalize" }}>{a.angle.replace(/_/g, " ")}</span> <span style={{ color: GR, fontWeight: 700 }}>{a.rate}%</span> <span style={{ color: "rgba(255,255,255,.4)" }}>({a.replied}/{a.sent})</span></div>)}</div>
+    </div>}
+
+    {rows.length > 0 && <div style={{ ...card, padding: "14px 18px", marginBottom: 16 }}>
+      <div style={{ fontSize: 11, color: "rgba(255,255,255,.4)", textTransform: "uppercase", letterSpacing: ".8px", marginBottom: 10 }}>✍️ Pitch style <span style={{ textTransform: "none", letterSpacing: 0, color: "rgba(255,255,255,.3)" }}>— applies when you Generate / Regenerate</span></div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <select value={tone} onChange={(e) => setTone(e.target.value)} style={{ ...inp, flex: "0 0 auto" }}><option value="human">Tone: Warm &amp; human</option><option value="casual">Tone: Casual &amp; friendly</option><option value="direct">Tone: Direct &amp; punchy</option><option value="professional">Tone: Professional</option></select>
+        <select value={length} onChange={(e) => setLength(e.target.value)} style={{ ...inp, flex: "0 0 auto" }}><option value="tiny">Length: Very short</option><option value="short">Length: Short</option><option value="medium">Length: Medium</option></select>
+        <input value={instructions} onChange={(e) => setInstructions(e.target.value)} placeholder="Your angle / direction, e.g. 'mention we're local & family-owned; lead with the patient-retail margin; keep it 2 lines'" style={{ ...inp, flex: "1 1 280px" }} />
+      </div>
     </div>}
 
     {loading ? <p style={{ color: "rgba(255,255,255,.4)", padding: 30, textAlign: "center" }}>Loading…</p>

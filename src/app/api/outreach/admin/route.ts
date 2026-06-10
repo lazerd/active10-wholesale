@@ -60,8 +60,9 @@ export async function POST(req: NextRequest) {
       const used = (prior || []).map((t) => t.angle).filter(Boolean) as string[];
       // Clear any unsent draft so we don't pile up drafts for one prospect.
       await supabaseAdmin.from("outreach_touches").delete().eq("prospect_id", prospectId).eq("status", "draft");
-      const angle = nextAngle(p.type || "chiropractor", used);
-      const pitch = await generatePitch({ name: p.name, business: p.business, city: p.city, type: p.type }, angle);
+      // Optional steering: explicit angle override + tone/length/custom instructions.
+      const angle = body.angle && (ANGLES[p.type || "chiropractor"] || ANGLES.other).some((a) => a.key === body.angle) ? body.angle : nextAngle(p.type || "chiropractor", used);
+      const pitch = await generatePitch({ name: p.name, business: p.business, city: p.city, type: p.type }, angle, { tone: body.tone, length: body.length, instructions: body.instructions });
       const { data: touch } = await supabaseAdmin.from("outreach_touches").insert({ prospect_id: prospectId, angle, subject: pitch.subject, body: pitch.body, status: "draft" }).select().single();
       return NextResponse.json({ ok: true, touch, angleLabel: (ANGLES[p.type || "chiropractor"] || ANGLES.other).find((a) => a.key === angle)?.label || angle });
     }

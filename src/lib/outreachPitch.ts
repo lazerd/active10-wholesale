@@ -73,24 +73,54 @@ export function templatePitch(p: Prospect, angle: string): Pitch {
   return T[angle] || T.margin;
 }
 
-async function geminiPitch(p: Prospect, angle: string): Promise<Pitch | null> {
+export type PitchOpts = { tone?: string; length?: string; instructions?: string };
+
+const TONES: Record<string, string> = {
+  human: "warm and human — like a real person who quickly typed a genuine note",
+  casual: "casual and friendly — relaxed, like emailing a peer you respect",
+  direct: "direct and punchy — confident, gets to the point fast, a little bold",
+  professional: "polished and professional, but still personable (not stiff or corporate)",
+};
+
+async function geminiPitch(p: Prospect, angle: string, opts: PitchOpts = {}): Promise<Pitch | null> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) return null;
   const angleHint: Record<string, string> = {
-    margin: "they can resell our products to patients at a 50%-off-retail wholesale margin",
-    pull_through: "we give free patient samples that drive take-home demand and reorders",
-    clinical: "our products are professional-grade pain relief / full-spectrum CBD for the conditions they treat",
-    trial: "a low-risk first order: welcome discount, free shipping, free samples, no minimum",
-    commission: "they earn commission on every practice they refer via a personal tracked link",
-    passive: "it's passive income with automatic tracking and transparent payouts",
+    margin: "they can stock our products and resell to patients at a ~50%-off-retail wholesale margin (extra revenue + helps patients between visits)",
+    pull_through: "we give free patient sample packets that create take-home demand, so patients come back asking to buy and the practice reorders",
+    clinical: "professional-grade topical pain relief / full-spectrum CBD for the exact musculoskeletal issues they treat — a take-home complement to in-office care",
+    trial: "a genuinely low-risk first order: welcome discount, free shipping, free samples, no real commitment",
+    commission: "they earn commission on every practice they refer through a personal tracked link",
+    passive: "passive income with automatic tracking and transparent payouts — nothing to chase",
     audience: "they can monetize their health-focused audience with an affiliate link",
   };
-  const prompt = `Write a short, warm, professional cold outreach email from Darrin Cohen at Active 10 (professional-grade CBD & topical pain-relief products, wholesale.getactive10.com) to ${p.name || "the owner"} at "${p.business || "a " + (p.type || "chiropractic") + " practice"}"${p.city ? " in " + p.city : ""}. Angle: ${angleHint[angle] || angleHint.margin}. Keep it under 130 words, no fluff, one clear ask, sign as "Darrin Cohen, Active Formulations". Return ONLY valid JSON: {"subject":"...","body":"..."} with \\n for line breaks.`;
+  const tone = TONES[opts.tone || "human"] || TONES.human;
+  const lengthRule = opts.length === "medium" ? "4–6 short sentences, under 110 words" : opts.length === "tiny" ? "2–3 sentences, under 45 words" : "3–4 short sentences, under 75 words";
+
+  const prompt = `You're Darrin Cohen, founder of Active 10 (professional-grade CBD & topical pain-relief products for healthcare practices — wholesale.getactive10.com). Write ONE cold outreach email that actually gets a reply.
+
+Recipient: ${p.name || "the practice owner"} at "${p.business || "a " + (p.type || "chiropractic") + " practice"}"${p.city ? ` in ${p.city}` : ""}.
+The hook: ${angleHint[angle] || angleHint.margin}.
+
+What makes it work (follow strictly):
+- Sound like a busy human who dashed off a quick, genuine note — NOT marketing copy.
+- Tone: ${tone}.
+- Length: ${lengthRule}. Shorter is better.
+- Subject line: lowercase, ~3–6 words, specific or curiosity-driven, never salesy. Good examples: "samples for ${p.business || "your patients"}?", "quick idea for your patients", "between-visit relief".
+- Open with something specific to them; do NOT open with pleasantries.
+- Exactly ONE ask, and make it a low-friction yes (e.g. "want me to send a sample pack?" / "worth a quick look?") — not a hard sell.
+- Use contractions and plain words. No adjectives stacked up. At most one exclamation point.
+- Sign off simply as just "Darrin".
+
+BANNED (never use): "I hope this email finds you well", "I hope you're doing well", "I'm reaching out", "I wanted to reach out", "in today's", "fast-paced", "elevate", "seamless", "cutting-edge", "innovative", "exciting opportunity", "game-changer", "leverage", "synergy", "passionate about", "revolutionary", "unlock", "—" em-dashes, and corporate buzzwords. No fake personalization you can't back up.
+${opts.instructions ? `\nExtra direction from Darrin (follow this): ${opts.instructions}\n` : ""}
+Return ONLY valid JSON: {"subject":"...","body":"..."} with \\n for line breaks in the body.`;
+
   try {
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.85 } }),
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.95, topP: 0.95 } }),
     });
     const d = await r.json();
     let txt: string = d?.candidates?.[0]?.content?.parts?.[0]?.text || "";
@@ -101,6 +131,6 @@ async function geminiPitch(p: Prospect, angle: string): Promise<Pitch | null> {
   return null;
 }
 
-export async function generatePitch(p: Prospect, angle: string): Promise<Pitch> {
-  return (await geminiPitch(p, angle)) || templatePitch(p, angle);
+export async function generatePitch(p: Prospect, angle: string, opts: PitchOpts = {}): Promise<Pitch> {
+  return (await geminiPitch(p, angle, opts)) || templatePitch(p, angle);
 }
