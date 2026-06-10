@@ -141,14 +141,16 @@ export default function AdminOutreach() {
             <span style={{ fontSize: 12, fontWeight: 700, color: statusColor[p.status] || "white", textTransform: "capitalize" }}>{p.status.replace(/_/g, " ")}</span>
           </div>
 
-          {draft ? (<div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${B}15` }}>
-            <input value={draft.subject} onChange={(e) => editDraft(p.id, "subject", e.target.value)} style={{ ...inp, width: "100%", fontWeight: 600, marginBottom: 8 }} />
-            <textarea value={draft.body} onChange={(e) => editDraft(p.id, "body", e.target.value)} rows={8} style={{ ...inp, width: "100%", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }} />
+          {draft ? (<div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${B}15`, position: "relative" }}>
+            {busy === p.id && <div style={{ position: "absolute", inset: 0, background: "rgba(0,37,61,.55)", backdropFilter: "blur(1px)", zIndex: 5, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 10 }}><div style={{ display: "flex", alignItems: "center", gap: 10, background: `${B}33`, border: `1px solid ${BL}55`, borderRadius: 10, padding: "10px 18px" }}><span style={{ display: "inline-block", width: 16, height: 16, border: `2px solid ${BL}`, borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /><span style={{ fontSize: 13, fontWeight: 600 }}>Writing a new pitch…</span></div></div>}
+            <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+            <input value={draft.subject} onChange={(e) => editDraft(p.id, "subject", e.target.value)} style={{ ...inp, width: "100%", fontWeight: 600, marginBottom: 8, opacity: busy === p.id ? 0.4 : 1 }} />
+            <textarea value={draft.body} onChange={(e) => editDraft(p.id, "body", e.target.value)} rows={8} style={{ ...inp, width: "100%", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5, opacity: busy === p.id ? 0.4 : 1 }} />
             <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
               {gmail.connected && p.email && <button onClick={() => sendGmail(p, draft)} disabled={busy === draft.id} style={{ ...btnP, background: `linear-gradient(135deg,${GR},#00D2A0)`, opacity: busy === draft.id ? 0.5 : 1 }}>{busy === draft.id ? "Sending…" : "📨 Send via Gmail"}</button>}
               <button onClick={() => copyEmail(p, draft)} style={btnP}>{copiedId === draft.id ? "✓ Copied" : "📋 Copy for Gmail"}</button>
               <button onClick={() => markSent(p, draft)} style={{ ...btnS, color: GR, borderColor: `${GR}55` }}>✓ Mark as Sent</button>
-              <button onClick={() => generate(p)} disabled={busy === p.id} style={btnS}>↻ Regenerate</button>
+              <button onClick={() => generate(p)} disabled={busy === p.id} style={{ ...btnS, opacity: busy === p.id ? 0.5 : 1 }}>{busy === p.id ? "⏳ Writing…" : "↻ Regenerate"}</button>
             </div>
           </div>) : (<div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", alignItems: "center", borderTop: `1px solid ${B}15`, paddingTop: 12 }}>
             <button onClick={() => generate(p)} disabled={busy === p.id} style={{ ...btnP, opacity: busy === p.id ? 0.5 : 1 }}>{busy === p.id ? "Writing…" : sentCount > 0 ? "✍️ Write Follow-up (new angle)" : "✍️ Generate Pitch"}</button>
