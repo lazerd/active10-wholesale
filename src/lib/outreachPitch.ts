@@ -6,8 +6,19 @@ export type Pitch = { subject: string; body: string };
 
 const SITE = "https://wholesale.getactive10.com";
 
+// Darrin's hand-written default letter — always sent verbatim (greeting personalized).
+// This is the first touch for every prospect; AI angles kick in on follow-ups.
+export function founderLetter(p: Prospect): Pitch {
+  const first = p.name ? p.name.split(" ")[0] : "there";
+  return {
+    subject: "free samples, no sales call",
+    body: `Hi ${first},\n\nI'll keep this short because I know your day is booked back to back.\n\nMy name is Darrin and I make Active 10, a topical pain relief cream. Chiropractors were our first real customers. Before we ever sold a single jar online, it was DCs using it on patients during adjustments and selling it at the front desk. Years later, that's still the heart of the business — hundreds of practices around the country carry it now.\n\nThe short version of why it sticks: patients use it after their adjustment and between visits, they feel the difference, and they come back to your front desk asking for more. It sells itself once it's on the shelf, and the margins actually make it worth shelf space.\n\nBut I'd rather you judge that yourself than take my word for it. Reply with your shipping address and I'll personally get samples in the mail to you this week. No catch, no sales call, no ten-email follow-up sequence. Try it on yourself, try it on a few patients, and see what they say.\n\nIf it earns a spot in your practice, setting up a wholesale account takes about two minutes at wholesale.getactive10.com — opening orders get 20% off plus free shipping.\n\nEither way, thanks for reading this far. I mean that.\n\nDarrin Cohen\nFounder, Active 10\n800-636-4130`,
+  };
+}
+
 export const ANGLES: Record<string, { key: string; label: string }[]> = {
   chiropractor: [
+    { key: "founder_intro", label: "Darrin's letter (founder story + free samples)" },
     { key: "margin", label: "Wholesale margin / resell to patients" },
     { key: "pull_through", label: "Patient demand & free samples" },
     { key: "clinical", label: "Professional-grade relief" },
@@ -19,6 +30,7 @@ export const ANGLES: Record<string, { key: string; label: string }[]> = {
     { key: "audience", label: "Monetize your audience" },
   ],
   other: [
+    { key: "founder_intro", label: "Darrin's letter (founder story + free samples)" },
     { key: "margin", label: "Wholesale opportunity" },
     { key: "trial", label: "Low-risk first order" },
   ],
@@ -41,6 +53,7 @@ export function templatePitch(p: Prospect, angle: string): Pitch {
   const first = hi(p);
   const b = biz(p);
   const T: Record<string, Pitch> = {
+    founder_intro: founderLetter(p),
     margin: {
       subject: `Wholesale pricing for ${b}`,
       body: `Hi ${first},\n\nI'm with Active 10 — we make professional-grade CBD and topical pain-relief products used in chiropractic and physical-therapy practices.\n\nMany practices like ${b} stock our line and resell to patients: our wholesale pricing is 50% off retail, so it becomes a nice additional revenue stream while genuinely helping patients between visits.\n\nWould it be worth a quick look? I can set you up with an account and an intro offer.\n\nBest,\nDarrin Cohen\nActive Formulations\n${SITE}`,
@@ -162,6 +175,8 @@ Return ONLY valid JSON: {"subject":"...","body":"..."} with \\n for line breaks 
 }
 
 export async function generatePitch(p: Prospect, angle: string, opts: PitchOpts = {}): Promise<Pitch & { source: "ai" | "template"; aiError?: string }> {
+  // The default letter is Darrin's own writing — never AI-rewritten.
+  if (angle === "founder_intro") return { ...founderLetter(p), source: "template" };
   const ai = await geminiPitch(p, angle, opts);
   if (!("error" in ai)) return { ...ai, source: "ai" };
   return { ...templatePitch(p, angle), source: "template", aiError: ai.error };
