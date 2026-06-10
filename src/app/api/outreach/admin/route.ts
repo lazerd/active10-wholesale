@@ -15,6 +15,36 @@ async function isAdmin(req: NextRequest): Promise<boolean> {
   return !!ad;
 }
 
+// Pulls human-readable text from a prospect's website (title, description,
+// headings, visible copy) so the AI can personalize with real details.
+async function researchSite(website: string): Promise<string> {
+  const grab = async (url: string) => {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 7000);
+    try {
+      const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120", Accept: "text/html" }, signal: ctrl.signal, redirect: "follow" });
+      return r.ok ? await r.text() : "";
+    } catch { return ""; } finally { clearTimeout(t); }
+  };
+  const textify = (html: string) => {
+    const title = (html.match(/<title[^>]*>([^<]+)<\/title>/i) || [])[1] || "";
+    const desc = (html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)/i) || [])[1] || "";
+    const heads = Array.from(html.matchAll(/<h[12][^>]*>([\s\S]*?)<\/h[12]>/gi)).map((m) => m[1].replace(/<[^>]+>/g, " "));
+    const body = html
+      .replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<nav[\s\S]*?<\/nav>/gi, " ").replace(/<footer[\s\S]*?<\/footer>/gi, " ")
+      .replace(/<[^>]+>/g, " ").replace(/&[a-z#0-9]+;/gi, " ").replace(/\s+/g, " ").trim();
+    return [title, desc, heads.join(". "), body.slice(0, 900)].filter(Boolean).join("\n").replace(/\s+/g, " ").trim();
+  };
+  const home = await grab(website);
+  let out = home ? textify(home) : "";
+  if (out.length < 300) {
+    const about = await grab(website.replace(/\/$/, "") + "/about");
+    if (about) out = (out + "\n" + textify(about)).trim();
+  }
+  return out.slice(0, 1500);
+}
+
 export async function POST(req: NextRequest) {
   try {
     if (!(await isAdmin(req))) return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
@@ -68,10 +98,18 @@ export async function POST(req: NextRequest) {
       await supabaseAdmin.from("outreach_touches").delete().eq("prospect_id", prospectId).eq("status", "draft");
       // Optional steering: explicit angle override + tone/length/custom instructions.
       const angle = body.angle && (ANGLES[p.type || "chiropractor"] || ANGLES.other).some((a) => a.key === body.angle) ? body.angle : nextAngle(p.type || "chiropractor", used);
+      // Research their website once (cached) so the pitch can reference real details.
+      let research: string = p.research || "";
+      if (!research && p.website) {
+        try {
+          research = await researchSite(p.website);
+          if (research) await supabaseAdmin.from("outreach_prospects").update({ research }).eq("id", prospectId);
+        } catch {}
+      }
       // Standing instructions (saved rules) always apply; one-off direction is appended after.
       const { data: cfg } = await supabaseAdmin.from("outreach_settings").select("standing_instructions").eq("id", "default").single();
       const merged = [cfg?.standing_instructions, body.instructions].filter(Boolean).join("\n");
-      const pitch = await generatePitch({ name: p.name, business: p.business, city: p.city, type: p.type }, angle, { tone: body.tone, length: body.length, instructions: merged || undefined });
+      const pitch = await generatePitch({ name: p.name, business: p.business, city: p.city, type: p.type, research }, angle, { tone: body.tone, length: body.length, instructions: merged || undefined });
       const { data: touch } = await supabaseAdmin.from("outreach_touches").insert({ prospect_id: prospectId, angle, subject: pitch.subject, body: pitch.body, status: "draft" }).select().single();
       return NextResponse.json({ ok: true, touch, source: pitch.source, aiError: pitch.aiError || null, aiKey: !!process.env.GEMINI_API_KEY, angleLabel: (ANGLES[p.type || "chiropractor"] || ANGLES.other).find((a) => a.key === angle)?.label || angle });
     }

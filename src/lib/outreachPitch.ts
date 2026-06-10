@@ -1,7 +1,7 @@
 // Outreach pitch engine. Multiple angles so follow-ups differ; uses Gemini when
 // GEMINI_API_KEY is set, otherwise smart templates. Same output shape either way.
 
-export type Prospect = { name?: string | null; business?: string | null; city?: string | null; type?: string | null };
+export type Prospect = { name?: string | null; business?: string | null; city?: string | null; type?: string | null; research?: string | null };
 export type Pitch = { subject: string; body: string };
 
 const SITE = "https://wholesale.getactive10.com";
@@ -96,28 +96,40 @@ async function geminiPitch(p: Prospect, angle: string, opts: PitchOpts = {}): Pr
   };
   const tone = TONES[opts.tone || "human"] || TONES.human;
   const lengthRule = opts.length === "medium" ? "4–6 short sentences, under 110 words" : opts.length === "tiny" ? "2–3 sentences, under 45 words" : "3–4 short sentences, under 75 words";
+  const research = (p.research || "").trim();
 
   const prompt = `You're Darrin Cohen, founder of Active 10 (professional-grade CBD & topical pain-relief products for healthcare practices — wholesale.getactive10.com). Write ONE cold outreach email that actually gets a reply.
 
 Recipient: ${p.name || "the practice owner"} at "${p.business || "a " + (p.type || "chiropractic") + " practice"}"${p.city ? ` in ${p.city}` : ""}.
 The hook: ${angleHint[angle] || angleHint.margin}.
+${research ? `\nWhat their own website says about them (USE THIS — open with one specific, true detail from it, stated casually, never as flattery):\n"""${research.slice(0, 1200)}"""\n` : ""}
+Here are two examples of the QUALITY BAR — match their feel, rhythm, and specificity (do NOT copy their content):
+
+EXAMPLE 1
+subject: post-adjustment soreness
+body: Dr. Reyes — noticed you do a lot of sports rehab at Eastside Spine. Patients always ask what to use between visits, and that's exactly why practices stock our topical line: it's professional-grade, and you keep the retail margin. Want me to mail you a few samples to try on your toughest cases?\n\nDarrin
+
+EXAMPLE 2
+subject: your patients keep asking
+body: Quick one — chiros tell us the #1 question after an adjustment is "what can I use at home?" We make pro-grade topical relief practices resell at 50% margin, and we'll send free patient samples to start. Worth a look?\n\nDarrin
 
 What makes it work (follow strictly):
 - Sound like a busy human who dashed off a quick, genuine note — NOT marketing copy.
 - Tone: ${tone}.
 - Length: ${lengthRule}. Shorter is better.
-- Subject line: lowercase, ~3–6 words, specific or curiosity-driven, never salesy. Good examples: "samples for ${p.business || "your patients"}?", "quick idea for your patients", "between-visit relief".
-- Open with something specific to them; do NOT open with pleasantries.
-- Exactly ONE ask, and make it a low-friction yes (e.g. "want me to send a sample pack?" / "worth a quick look?") — not a hard sell.
-- Use contractions and plain words. No adjectives stacked up. At most one exclamation point.
+- Subject line: lowercase, ~3–6 words, specific or curiosity-driven, never salesy.
+- Open with something specific to THEM (from their website info above if provided); never open with pleasantries.
+- Exactly ONE ask, a low-friction yes (e.g. "want me to send a sample pack?") — not a hard sell.
+- Use contractions and plain words. No stacked adjectives. At most one exclamation point.
 - Sign off simply as just "Darrin" (unless the extra direction below specifies a different signature — then use that exactly).
 
-BANNED (never use): "I hope this email finds you well", "I hope you're doing well", "I'm reaching out", "I wanted to reach out", "in today's", "fast-paced", "elevate", "seamless", "cutting-edge", "innovative", "exciting opportunity", "game-changer", "leverage", "synergy", "passionate about", "revolutionary", "unlock", "—" em-dashes, and corporate buzzwords. No fake personalization you can't back up.
+BANNED (never use): "I hope this email finds you well", "I hope you're doing well", "I'm reaching out", "I wanted to reach out", "in today's", "fast-paced", "elevate", "seamless", "cutting-edge", "innovative", "exciting opportunity", "game-changer", "leverage", "synergy", "passionate about", "revolutionary", "unlock", "—" em-dashes, and corporate buzzwords. No fake personalization you can't back up — if no website info was given, don't invent details.
 ${opts.instructions ? `\nExtra direction from Darrin (follow this): ${opts.instructions}\n` : ""}
 Return ONLY valid JSON: {"subject":"...","body":"..."} with \\n for line breaks in the body.`;
 
-  // Try current model names in order — Google retires/renames these periodically.
-  const MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest", "gemini-1.5-flash"];
+  // Pro first for writing quality (free tier allows low daily volume), then
+  // flash fallbacks — Google retires/renames these periodically.
+  const MODELS = ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest"];
   let lastError = "";
   for (const model of MODELS) {
     try {
