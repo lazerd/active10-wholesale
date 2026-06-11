@@ -68,7 +68,10 @@ export async function POST(req: NextRequest) {
       // Generate a temporary password
       const tempPassword = "A10-" + Math.random().toString(36).slice(2, 10);
 
-      // Create auth user
+      // Create auth user — or reuse an existing one (re-application, prior
+      // sample/affiliate signup, etc.) by resetting them a fresh temp password.
+      // The credentials only ever go to the applicant's own email, so this is safe.
+      let userId: string;
       const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
         email: app.email,
         password: tempPassword,
@@ -76,11 +79,25 @@ export async function POST(req: NextRequest) {
       });
 
       if (authError) {
-        // User might already exist
-        if (authError.message.includes("already been registered")) {
-          return NextResponse.json({ error: "This email already has an account." }, { status: 400 });
+        if (!authError.message.includes("already been registered")) {
+          return NextResponse.json({ error: authError.message }, { status: 500 });
         }
-        return NextResponse.json({ error: authError.message }, { status: 500 });
+        // Find the existing auth user by email
+        let existing: { id: string } | undefined;
+        for (let page = 1; page <= 20 && !existing; page++) {
+          const { data: pageData, error: listErr } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 200 });
+          if (listErr) return NextResponse.json({ error: "Lookup failed: " + listErr.message }, { status: 500 });
+          existing = pageData.users.find((u) => (u.email || "").toLowerCase() === String(app.email).toLowerCase());
+          if (pageData.users.length < 200) break;
+        }
+        if (!existing) {
+          return NextResponse.json({ error: "This email already has an account, but it couldn't be found to reset. Contact support." }, { status: 500 });
+        }
+        const { error: updErr } = await supabaseAdmin.auth.admin.updateUserById(existing.id, { password: tempPassword, email_confirm: true });
+        if (updErr) return NextResponse.json({ error: "Password reset failed: " + updErr.message }, { status: 500 });
+        userId = existing.id;
+      } else {
+        userId = authUser.user.id;
       }
 
       // If this applicant came in through an affiliate referral link, credit them.
@@ -94,9 +111,11 @@ export async function POST(req: NextRequest) {
         if (aff && aff.status === "active") affiliateId = aff.id;
       }
 
-      // Create customer record
-      const { error: custError } = await supabaseAdmin.from("customers").insert({
-        user_id: authUser.user.id,
+      // Create the customer record — or reactivate/relink an existing one for
+      // the same email so re-approvals don't fail on duplicates.
+      const { data: existingCust } = await supabaseAdmin.from("customers").select("id").ilike("email", app.email).limit(1).maybeSingle();
+      const custFields = {
+        user_id: userId,
         name: app.name,
         email: app.email,
         phone: app.phone || null,
@@ -107,8 +126,13 @@ export async function POST(req: NextRequest) {
         zip: app.zip || null,
         type: app.type,
         status: "active",
-        affiliate_id: affiliateId,
-      });
+      };
+      const { error: custError } = existingCust
+        ? await supabaseAdmin
+            .from("customers")
+            .update(affiliateId ? { ...custFields, affiliate_id: affiliateId } : custFields)
+            .eq("id", existingCust.id)
+        : await supabaseAdmin.from("customers").insert({ ...custFields, affiliate_id: affiliateId });
 
       if (custError) {
         return NextResponse.json({ error: "Failed to create customer: " + custError.message }, { status: 500 });
