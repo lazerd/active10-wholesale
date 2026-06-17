@@ -181,3 +181,90 @@ export async function generatePitch(p: Prospect, angle: string, opts: PitchOpts 
   if (!("error" in ai)) return { ...ai, source: "ai" };
   return { ...templatePitch(p, angle), source: "template", aiError: ai.error };
 }
+
+// ── LinkedIn outreach ───────────────────────────────────────────────────────
+// Two pieces: a connection-request NOTE (<=300 chars, no links — LinkedIn
+// penalizes them) and a longer MESSAGE sent AFTER they accept (the real offer).
+// Everything is copied and sent manually by Darrin — no automation.
+export type LinkedInPitch = { connectNote: string; message: string };
+export const LINKEDIN_NOTE_LIMIT = 300;
+
+const clampNote = (s: string) => {
+  const t = (s || "").replace(/\s+/g, " ").trim();
+  return t.length <= LINKEDIN_NOTE_LIMIT ? t : t.slice(0, LINKEDIN_NOTE_LIMIT - 1).trimEnd() + "…";
+};
+
+export function templateLinkedInPitch(p: Prospect, angle: string): LinkedInPitch {
+  const first = hi(p);
+  const b = biz(p);
+  const connectByAngle: Record<string, string> = {
+    margin: `Hi ${first}, I'm Darrin — I make Active 10, a topical pain-relief cream chiropractors stock and resell to patients. Came across ${b} and thought I'd reach out to connect.`,
+    pull_through: `Hi ${first}, I'm Darrin, founder of Active 10 (pro-grade topical pain relief). Lots of DCs hand our samples to patients between visits — saw ${b} and wanted to connect.`,
+    clinical: `Hi ${first}, I'm Darrin with Active 10 — professional-grade topical relief for the musculoskeletal stuff you treat daily. Would love to connect with you and ${b}.`,
+    trial: `Hi ${first}, I'm Darrin, founder of Active 10. We help practices like ${b} add a low-risk take-home pain-relief product. Thought I'd connect.`,
+  };
+  const connectNote = clampNote(connectByAngle[angle] || connectByAngle.margin);
+  const message = `Thanks for connecting, ${first}!\n\nQuick reason I reached out: I make Active 10, a topical pain-relief cream that started with chiropractors using it on patients during adjustments and selling it at the front desk. Hundreds of practices carry it now.\n\nRather than pitch you, I'd just send you a free sample — try it on yourself and a few patients and see what they say. No sales call, no catch. Want me to mail one to ${b}? Just send me a shipping address, or grab one here: ${SITE}/sample\n\nDarrin Cohen\nFounder, Active 10`;
+  return { connectNote, message };
+}
+
+async function geminiLinkedIn(p: Prospect, angle: string, opts: PitchOpts = {}): Promise<LinkedInPitch | { error: string }> {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) return { error: "no GEMINI_API_KEY" };
+  const angleHint: Record<string, string> = {
+    margin: "they can stock our products and resell to patients at a ~50%-off-retail wholesale margin",
+    pull_through: "we give free patient sample packets that create take-home demand so patients come back asking to buy",
+    clinical: "professional-grade topical pain relief for the exact musculoskeletal issues they treat — a take-home complement to in-office care",
+    trial: "a genuinely low-risk way to try it: free samples first, no commitment",
+  };
+  const tone = TONES[opts.tone || "human"] || TONES.human;
+  const research = (p.research || "").trim();
+
+  const prompt = `You're Darrin Cohen, founder of Active 10 (professional-grade topical pain-relief / CBD for healthcare practices — ${SITE}). Write a LinkedIn outreach pair to a ${p.type || "chiropractic"} practice owner.
+
+Recipient: ${p.name || "the practice owner"}${p.business ? ` at "${p.business}"` : ""}${p.city ? ` in ${p.city}` : ""}.
+The hook: ${angleHint[angle] || angleHint.margin}.
+${research ? `\nWhat their LinkedIn/website says (use one true, specific detail; never flattery):\n"""${research.slice(0, 800)}"""\n` : ""}
+Produce TWO things:
+1) "connectNote": the note attached to a LinkedIn CONNECTION REQUEST. HARD LIMIT 300 characters (count them — must be under 300). Warm, human, who-you-are + a soft reason you're reaching out. NO links/URLs (LinkedIn penalizes them). No hard sell — the goal is just to get the connection accepted. Sign as "Darrin" only if it fits the character budget, otherwise omit the signature.
+2) "message": the message you send AFTER they accept. This is where the real ask goes: offer to mail a FREE sample (no sales call, no catch), ask for a shipping address OR point them to ${SITE}/sample, and sign "Darrin Cohen / Founder, Active 10". 3–5 short sentences.
+
+Tone: ${tone}. Use contractions, plain words, no corporate buzzwords.
+BANNED: "I hope this finds you well", "I wanted to reach out", "I'm reaching out", "exciting opportunity", "leverage", "synergy", "passionate about", em-dashes, stacked adjectives.
+
+Return ONLY valid JSON: {"connectNote":"...","message":"..."} with \\n for line breaks in message.`;
+
+  const MODELS = ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest"];
+  let lastError = "";
+  for (const model of MODELS) {
+    try {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.9, topP: 0.95, responseMimeType: "application/json" },
+        }),
+      });
+      if (!r.ok) { lastError = `${model}: HTTP ${r.status} ${(await r.text()).slice(0, 200)}`; console.error("Gemini LI error:", lastError); continue; }
+      const d = await r.json();
+      let txt: string = d?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      txt = txt.replace(/```json|```/g, "").trim();
+      const parsed = JSON.parse(txt);
+      if (parsed.connectNote && parsed.message) {
+        return { connectNote: clampNote(String(parsed.connectNote)), message: String(parsed.message) };
+      }
+      lastError = `${model}: empty/invalid JSON`;
+    } catch (e: any) {
+      lastError = `${model}: ${String(e?.message || e).slice(0, 200)}`;
+      console.error("Gemini LI error:", lastError);
+    }
+  }
+  return { error: lastError };
+}
+
+export async function generateLinkedInPitch(p: Prospect, angle: string, opts: PitchOpts = {}): Promise<LinkedInPitch & { source: "ai" | "template"; aiError?: string }> {
+  const ai = await geminiLinkedIn(p, angle, opts);
+  if (!("error" in ai)) return { ...ai, source: "ai" };
+  return { ...templateLinkedInPitch(p, angle), source: "template", aiError: ai.error };
+}

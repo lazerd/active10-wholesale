@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { generatePitch, nextAngle, ANGLES } from "@/lib/outreachPitch";
+import { generatePitch, generateLinkedInPitch, nextAngle, ANGLES } from "@/lib/outreachPitch";
 import { getGmailAccess, gmailSend, gmailRepliesFrom } from "@/lib/gmail";
 
 const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
@@ -70,11 +70,12 @@ export async function POST(req: NextRequest) {
       }
       const angles = Object.entries(angleStats).map(([angle, s]) => ({ angle, ...s, rate: s.sent ? Math.round((s.replied / s.sent) * 100) : 0 })).sort((a, b) => b.rate - a.rate || b.sent - a.sent);
 
-      const rows = ps.map((p) => ({ ...p, touches: (byProspect[p.id] || []).map((t) => ({ id: t.id, angle: t.angle, subject: t.subject, body: t.body, status: t.status, sent_at: t.sent_at })) }));
+      const rows = ps.map((p) => ({ ...p, touches: (byProspect[p.id] || []).map((t) => ({ id: t.id, angle: t.angle, subject: t.subject, body: t.body, connect_note: t.connect_note, channel: t.channel, status: t.status, sent_at: t.sent_at })) }));
       const funnel = {
         total: ps.length,
         prospected: ps.filter((p) => p.status === "prospected").length,
         emailed: ps.filter((p) => p.status === "emailed" || p.status === "followed_up").length,
+        connected: ps.filter((p) => p.status === "connected").length,
         replied: ps.filter((p) => p.status === "replied").length,
         won: ps.filter((p) => p.status === "won").length,
         dead: ps.filter((p) => p.status === "dead").length,
@@ -109,16 +110,26 @@ export async function POST(req: NextRequest) {
       // Standing instructions (saved rules) always apply; one-off direction is appended after.
       const { data: cfg } = await supabaseAdmin.from("outreach_settings").select("standing_instructions").eq("id", "default").single();
       const merged = [cfg?.standing_instructions, body.instructions].filter(Boolean).join("\n");
-      const pitch = await generatePitch({ name: p.name, business: p.business, city: p.city, type: p.type, research }, angle, { tone: body.tone, length: body.length, instructions: merged || undefined });
+      const prospectInfo = { name: p.name, business: p.business, city: p.city, type: p.type, research };
+
+      // LinkedIn prospects get a connection note (<=300) + a post-accept message.
+      if (p.channel === "linkedin") {
+        const li = await generateLinkedInPitch(prospectInfo, angle, { tone: body.tone, length: body.length, instructions: merged || undefined });
+        const { data: touch } = await supabaseAdmin.from("outreach_touches").insert({ prospect_id: prospectId, angle, channel: "linkedin", connect_note: li.connectNote, body: li.message, status: "draft" }).select().single();
+        return NextResponse.json({ ok: true, touch, source: li.source, aiError: li.aiError || null, aiKey: !!process.env.GEMINI_API_KEY, angleLabel: (ANGLES[p.type || "chiropractor"] || ANGLES.other).find((a) => a.key === angle)?.label || angle });
+      }
+
+      const pitch = await generatePitch(prospectInfo, angle, { tone: body.tone, length: body.length, instructions: merged || undefined });
       const { data: touch } = await supabaseAdmin.from("outreach_touches").insert({ prospect_id: prospectId, angle, subject: pitch.subject, body: pitch.body, status: "draft" }).select().single();
       return NextResponse.json({ ok: true, touch, source: pitch.source, aiError: pitch.aiError || null, aiKey: !!process.env.GEMINI_API_KEY, angleLabel: (ANGLES[p.type || "chiropractor"] || ANGLES.other).find((a) => a.key === angle)?.label || angle });
     }
 
     if (action === "update_touch") {
-      const { touchId, subject, body: tbody } = body;
+      const { touchId, subject, body: tbody, connect_note } = body;
       const upd: any = {};
       if (subject != null) upd.subject = subject;
       if (tbody != null) upd.body = tbody;
+      if (connect_note != null) upd.connect_note = connect_note;
       await supabaseAdmin.from("outreach_touches").update(upd).eq("id", touchId);
       return NextResponse.json({ ok: true });
     }

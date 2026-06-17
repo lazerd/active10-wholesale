@@ -89,6 +89,72 @@ async function ddgSearch(query: string): Promise<string[]> {
   return candidateHosts(urls);
 }
 
+// ── LinkedIn profile discovery (public web-search metadata only — we never
+// log into or scrape LinkedIn itself). Returns public profile URLs + the
+// title/description the search engine already exposes.
+type LIResult = { url: string; title: string; description: string };
+
+const normalizeLI = (u: string) => {
+  try {
+    const url = new URL(u);
+    return `https://www.linkedin.com${url.pathname.replace(/\/$/, "").toLowerCase()}`;
+  } catch { return u.split("?")[0].replace(/\/$/, "").toLowerCase(); }
+};
+
+function parseLIName(title: string): { name: string; business: string } {
+  let t = (title || "").replace(/\s*[|\-–]\s*LinkedIn\s*$/i, "").replace(/\s+/g, " ").trim();
+  const parts = t.split(/\s+[-|–]\s+/).map((s) => s.trim()).filter(Boolean);
+  const name = parts[0] || "";
+  let business = "";
+  // Prefer a segment that names a company (often after "at"), else the last segment.
+  for (const seg of parts.slice(1)) {
+    const m = seg.match(/\bat\s+(.+)/i);
+    if (m) { business = m[1].trim(); break; }
+  }
+  if (!business && parts.length > 1) business = parts[parts.length - 1];
+  return { name, business };
+}
+
+async function braveLinkedIn(query: string): Promise<LIResult[]> {
+  try {
+    const q = `${query} site:linkedin.com/in`;
+    const r = await fetch(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=20`, {
+      headers: { Accept: "application/json", "X-Subscription-Token": process.env.BRAVE_API_KEY || "" },
+    });
+    if (!r.ok) { console.error("Brave LI search failed:", r.status); return []; }
+    const d = await r.json();
+    return ((d.web?.results || []) as any[])
+      .filter((x) => x.url && /linkedin\.com\/in\//i.test(x.url))
+      .map((x) => ({ url: x.url, title: x.title || "", description: x.description || "" }));
+  } catch (e) { console.error("Brave LI error", e); return []; }
+}
+
+async function ddgLinkedIn(query: string): Promise<LIResult[]> {
+  const q = `${query} site:linkedin.com/in`;
+  const html = await fetchT(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`, 9000);
+  const out: LIResult[] = [];
+  const matches = Array.from(html.matchAll(/class="result__a"[^>]*href="[^"]*uddg=([^&"']+)[^"]*"[^>]*>([\s\S]*?)<\/a>/g));
+  for (const m of matches) {
+    let url = ""; try { url = decodeURIComponent(m[1]); } catch { continue; }
+    if (!/linkedin\.com\/in\//i.test(url)) continue;
+    const title = m[2].replace(/<[^>]+>/g, "").replace(/&[a-z#0-9]+;/gi, " ").replace(/\s+/g, " ").trim();
+    out.push({ url, title, description: "" });
+  }
+  return out;
+}
+
+function dedupeLI(results: LIResult[]): LIResult[] {
+  const seen = new Set<string>();
+  const out: LIResult[] = [];
+  for (const r of results) {
+    const key = normalizeLI(r.url);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ ...r, url: key });
+  }
+  return out.slice(0, 15);
+}
+
 async function scrapeSite(base: string, city: string, type: string) {
   const root = await fetchT(base);
   if (!root) return null;
@@ -109,7 +175,37 @@ async function scrapeSite(base: string, city: string, type: string) {
 export async function POST(req: NextRequest) {
   try {
     if (!(await isAdmin(req))) return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-    const { query, urls, type = "chiropractor", city = "" } = await req.json();
+    const { query, urls, type = "chiropractor", city = "", channel = "email" } = await req.json();
+
+    // ── LinkedIn channel: find public profiles, no email/scrape required ──────
+    if (channel === "linkedin") {
+      let results: LIResult[] = [];
+      if (Array.isArray(urls) && urls.length) {
+        results = urls
+          .map((u: string) => (u.startsWith("http") ? u : `https://${u}`))
+          .filter((u: string) => /linkedin\.com\/in\//i.test(u))
+          .map((u: string) => ({ url: u, title: "", description: "" }));
+      } else if (query) {
+        results = process.env.BRAVE_API_KEY ? await braveLinkedIn(query) : await ddgLinkedIn(query);
+        if (!results.length && process.env.BRAVE_API_KEY) results = await ddgLinkedIn(query);
+      } else {
+        return NextResponse.json({ error: "Provide a search (e.g. 'chiropractors in Walnut Creek') or paste linkedin.com/in/ profile URLs." }, { status: 400 });
+      }
+      results = dedupeLI(results);
+      if (!results.length) return NextResponse.json({ ok: true, added: 0, found: [], note: "No LinkedIn profiles found (search engines sometimes block server requests — try pasting profile URLs directly)." });
+
+      const { data: existing } = await supabaseAdmin.from("outreach_prospects").select("linkedin_url").eq("channel", "linkedin");
+      const known = new Set<string>();
+      (existing || []).forEach((p) => { if (p.linkedin_url) known.add(normalizeLI(p.linkedin_url)); });
+
+      const fresh = results.filter((r) => !known.has(r.url)).map((r) => {
+        const { name, business } = parseLIName(r.title);
+        return { channel: "linkedin", linkedin_url: r.url, name: name || null, business: business || null, city, type, source: "linkedin search", status: "prospected" };
+      });
+      if (!fresh.length) return NextResponse.json({ ok: true, added: 0, found: [], note: "Found profiles, but they're already in your list." });
+      const { data: inserted } = await supabaseAdmin.from("outreach_prospects").insert(fresh).select();
+      return NextResponse.json({ ok: true, added: inserted?.length || 0, found: inserted || [] });
+    }
 
     let sites: string[] = [];
     if (Array.isArray(urls) && urls.length) {

@@ -4,11 +4,12 @@ import { supabase } from "@/lib/supabase";
 
 const B = "#0072BC", BL = "#0088DD", GR = "#00B894";
 
-type Touch = { id: string; angle: string; subject: string; body: string; status: string; sent_at: string | null };
-type Prospect = { id: string; name: string | null; business: string | null; email: string | null; website: string | null; city: string | null; type: string; status: string; touch_count: number; touches: Touch[] };
-type Funnel = { total: number; prospected: number; emailed: number; replied: number; won: number; dead: number };
+type Touch = { id: string; angle: string; subject: string; body: string; connect_note?: string | null; channel?: string | null; status: string; sent_at: string | null };
+type Prospect = { id: string; name: string | null; business: string | null; email: string | null; website: string | null; linkedin_url?: string | null; channel?: string | null; city: string | null; type: string; status: string; touch_count: number; touches: Touch[] };
+type Funnel = { total: number; prospected: number; emailed: number; connected?: number; replied: number; won: number; dead: number };
 
-const statusColor: Record<string, string> = { prospected: "#9FD2F0", emailed: "#FFC940", followed_up: "#FFA940", replied: GR, won: GR, dead: "rgba(255,255,255,.35)" };
+const statusColor: Record<string, string> = { prospected: "#9FD2F0", emailed: "#FFC940", followed_up: "#FFA940", connected: "#7FD0FF", replied: GR, won: GR, dead: "rgba(255,255,255,.35)" };
+const NOTE_LIMIT = 300;
 
 export default function AdminOutreach() {
   const [rows, setRows] = useState<Prospect[]>([]);
@@ -23,6 +24,7 @@ export default function AdminOutreach() {
   const [city, setCity] = useState("");
   const [type, setType] = useState("chiropractor");
   const [urls, setUrls] = useState("");
+  const [channel, setChannel] = useState<"email" | "linkedin">("email");
   const [drafts, setDrafts] = useState<Record<string, Touch>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [gmail, setGmail] = useState<{ connected: boolean; email: string | null; configured: boolean }>({ connected: false, email: null, configured: false });
@@ -56,11 +58,11 @@ export default function AdminOutreach() {
 
   const scrape = async () => {
     if (busy) return;
-    if (!query.trim() && !urls.trim()) { setMsg({ t: "Enter a search (e.g. 'chiropractors in Walnut Creek') or paste practice URLs.", ok: false }); return; }
+    if (!query.trim() && !urls.trim()) { setMsg({ t: channel === "linkedin" ? "Enter a search (e.g. 'chiropractors in Walnut Creek') or paste linkedin.com/in/ URLs." : "Enter a search (e.g. 'chiropractors in Walnut Creek') or paste practice URLs.", ok: false }); return; }
     setBusy("scrape"); setMsg(null);
     const { data: s } = await supabase.auth.getSession();
     const token = s.session?.access_token;
-    const payload: any = { type, city };
+    const payload: any = { type, city, channel };
     if (urls.trim()) payload.urls = urls.split(/[\s,\n]+/).map((u) => u.trim()).filter(Boolean);
     else payload.query = query.trim();
     const r = await fetch("/api/outreach/scrape", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) });
@@ -73,22 +75,37 @@ export default function AdminOutreach() {
 
   const generate = async (p: Prospect) => { setBusy(p.id); setMsg(null); const d = await call({ action: "generate", prospectId: p.id, tone, length, instructions: instructions.trim() || undefined }); setBusy(null); if (d.ok) { setDrafts((x) => ({ ...x, [p.id]: d.touch })); if (d.source === "template") setMsg({ t: d.aiKey ? `⚠️ AI failed, used a template. Reason: ${d.aiError || "unknown"}` : "⚠️ No Gemini key in production — using templates.", ok: false }); else setMsg({ t: "✨ AI-generated with your current style.", ok: true }); } else setMsg({ t: d.error || "Failed", ok: false }); };
   const copyEmail = (p: Prospect, t: Touch) => { navigator.clipboard?.writeText(`Subject: ${t.subject}\n\n${t.body}`); setCopiedId(t.id); setTimeout(() => setCopiedId(null), 1800); };
-  const markSent = async (p: Prospect, t: Touch) => { await call({ action: "update_touch", touchId: t.id, subject: t.subject, body: t.body }); await call({ action: "mark_sent", touchId: t.id, prospectId: p.id }); setDrafts((x) => { const n = { ...x }; delete n[p.id]; return n; }); load(); };
+  const markSent = async (p: Prospect, t: Touch) => { await call({ action: "update_touch", touchId: t.id, subject: t.subject, body: t.body, connect_note: t.connect_note }); await call({ action: "mark_sent", touchId: t.id, prospectId: p.id }); setDrafts((x) => { const n = { ...x }; delete n[p.id]; return n; }); load(); };
+  const copyField = (key: string, text: string) => { navigator.clipboard?.writeText(text); setCopiedId(key); setTimeout(() => setCopiedId(null), 1800); };
   const setStatus = async (p: Prospect, status: string) => { const lastSent = [...p.touches].find((t) => t.status === "sent"); await call({ action: "set_status", prospectId: p.id, status, touchId: status === "replied" ? lastSent?.id : undefined }); load(); };
   const del = async (p: Prospect) => { if (!confirm(`Remove ${p.business || p.email}?`)) return; await call({ action: "delete", prospectId: p.id }); load(); };
 
-  const editDraft = (pid: string, field: "subject" | "body", val: string) => setDrafts((x) => ({ ...x, [pid]: { ...x[pid], [field]: val } }));
+  const editDraft = (pid: string, field: "subject" | "body" | "connect_note", val: string) => setDrafts((x) => ({ ...x, [pid]: { ...x[pid], [field]: val } }));
   const saveStanding = async () => { setSavingStanding(true); const d = await call({ action: "save_settings", standing_instructions: standing }); setSavingStanding(false); if (d.ok) { setStandingSaved(true); setMsg({ t: "Standing rules saved — they'll apply to every pitch from now on.", ok: true }); } else setMsg({ t: d.error || "Save failed", ok: false }); };
 
+  const view = rows.filter((p) => (p.channel || "email") === channel);
+
   return (<div>
-    {/* Gmail connection */}
-    <div style={{ ...card, padding: "12px 18px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, background: gmail.connected ? `${GR}10` : "rgba(255,255,255,.03)", borderColor: gmail.connected ? `${GR}33` : `${B}22` }}>
+    {/* Channel switch */}
+    <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+      {([["email", "📧 Email"], ["linkedin", "🔗 LinkedIn"]] as const).map(([c, label]) => (
+        <button key={c} onClick={() => setChannel(c)} style={{ flex: 1, padding: "10px 16px", borderRadius: 10, border: `1px solid ${channel === c ? BL : `${B}33`}`, background: channel === c ? `linear-gradient(135deg,${B},${BL})` : "rgba(255,255,255,.04)", color: channel === c ? "white" : "rgba(255,255,255,.6)", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>{label}</button>
+      ))}
+    </div>
+
+    {/* Gmail connection (email channel only) */}
+    {channel === "email" && <div style={{ ...card, padding: "12px 18px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, background: gmail.connected ? `${GR}10` : "rgba(255,255,255,.03)", borderColor: gmail.connected ? `${GR}33` : `${B}22` }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontSize: 18 }}>📬</span><div><div style={{ fontSize: 13, fontWeight: 700, color: gmail.connected ? GR : "rgba(255,255,255,.7)" }}>Gmail {gmail.connected ? `connected · ${gmail.email}` : "not connected"}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,.4)" }}>{gmail.connected ? "Send pitches & auto-detect replies." : gmail.configured ? "Connect to send & track replies automatically." : "Add GOOGLE_CLIENT_ID/SECRET in Vercel to enable."}</div></div></div>
       <div style={{ display: "flex", gap: 8 }}>
         {gmail.connected && <button onClick={checkReplies} disabled={busy === "replies"} style={{ ...btnP, opacity: busy === "replies" ? 0.5 : 1 }}>{busy === "replies" ? "Checking…" : "🔄 Check Replies"}</button>}
         {gmail.connected ? <button onClick={disconnectGmail} style={btnS}>Disconnect</button> : gmail.configured ? <a href="/api/gmail/connect" style={{ ...btnP, textDecoration: "none" }}>Connect Gmail</a> : null}
       </div>
-    </div>
+    </div>}
+
+    {channel === "linkedin" && <div style={{ ...card, padding: "12px 18px", marginBottom: 16, background: `${B}10`, borderColor: `${B}33` }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: BL }}>🔗 LinkedIn assist — manual send</div>
+      <div style={{ fontSize: 11, color: "rgba(255,255,255,.45)", marginTop: 3, lineHeight: 1.5 }}>Finds public profiles via web search and drafts your connection note + follow-up message. You copy and send each one yourself on LinkedIn — nothing is automated. Keep it to a handful a day on a healthy account.</div>
+    </div>}
 
     {/* Finder */}
     <div style={{ ...card, padding: 20, marginBottom: 16 }}>
@@ -100,22 +117,28 @@ export default function AdminOutreach() {
         <select value={type} onChange={(e) => setType(e.target.value)} style={{ ...inp, flex: "0 0 150px" }}><option value="chiropractor">Chiropractors</option><option value="affiliate">Affiliates</option><option value="other">Other</option></select>
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search, e.g. 'chiropractors in Walnut Creek CA'" style={{ ...inp, flex: 1, minWidth: 240 }} />
         <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="City (optional)" style={{ ...inp, flex: "0 0 160px" }} />
-        <button onClick={scrape} disabled={busy === "scrape"} style={{ ...btnP, opacity: busy === "scrape" ? 0.5 : 1 }}>{busy === "scrape" ? "Scanning…" : "Find Prospects"}</button>
+        <button onClick={scrape} disabled={busy === "scrape"} style={{ ...btnP, opacity: busy === "scrape" ? 0.5 : 1 }}>{busy === "scrape" ? "Scanning…" : channel === "linkedin" ? "Find Profiles" : "Find Prospects"}</button>
       </div>
       <details style={{ fontSize: 12, color: "rgba(255,255,255,.45)" }}>
-        <summary style={{ cursor: "pointer" }}>Or paste practice website URLs directly (most reliable)</summary>
-        <textarea value={urls} onChange={(e) => setUrls(e.target.value)} placeholder="https://practice1.com&#10;https://practice2.com" rows={3} style={{ ...inp, width: "100%", marginTop: 8, resize: "vertical", fontFamily: "inherit" }} />
-        <button onClick={scrape} disabled={busy === "scrape"} style={{ ...btnS, marginTop: 6 }}>Scrape these URLs</button>
+        <summary style={{ cursor: "pointer" }}>{channel === "linkedin" ? "Or paste LinkedIn profile URLs directly (most reliable)" : "Or paste practice website URLs directly (most reliable)"}</summary>
+        <textarea value={urls} onChange={(e) => setUrls(e.target.value)} placeholder={channel === "linkedin" ? "https://www.linkedin.com/in/jane-smith-dc\nhttps://www.linkedin.com/in/john-doe-chiro" : "https://practice1.com\nhttps://practice2.com"} rows={3} style={{ ...inp, width: "100%", marginTop: 8, resize: "vertical", fontFamily: "inherit" }} />
+        <button onClick={scrape} disabled={busy === "scrape"} style={{ ...btnS, marginTop: 6 }}>{channel === "linkedin" ? "Add these profiles" : "Scrape these URLs"}</button>
       </details>
     </div>
 
     {msg && <div style={{ background: msg.ok ? `${GR}15` : "rgba(255,80,80,.1)", border: `1px solid ${msg.ok ? GR : "#FF6B6B"}33`, borderRadius: 8, padding: "10px 14px", marginBottom: 14, fontSize: 13, color: msg.ok ? GR : "#FF6B6B" }}>{msg.t}</div>}
 
-    {funnel && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(110px,1fr))", gap: 10, marginBottom: 16 }}>
-      {[["Prospects", funnel.total, "#9FD2F0"], ["Emailed", funnel.emailed, "#FFC940"], ["Replied", funnel.replied, GR], ["Won", funnel.won, GR], ["Dead", funnel.dead, "rgba(255,255,255,.4)"]].map(([l, v, c], i) => (
-        <div key={i} style={{ ...card, padding: "12px 14px" }}><div style={{ fontSize: 10, color: "rgba(255,255,255,.4)", textTransform: "uppercase", letterSpacing: ".5px" }}>{l}</div><div style={{ fontSize: 22, fontWeight: 800, color: c as string }}>{v as number}</div></div>
-      ))}
-    </div>}
+    {view.length > 0 && (() => {
+      const n = (s: string | string[]) => view.filter((p) => (Array.isArray(s) ? s.includes(p.status) : p.status === s)).length;
+      const cells: [string, number, string][] = channel === "linkedin"
+        ? [["Profiles", view.length, "#9FD2F0"], ["Invited", n(["emailed", "followed_up"]), "#FFC940"], ["Connected", n("connected"), "#7FD0FF"], ["Replied", n("replied"), GR], ["Won", n("won"), GR], ["Dead", n("dead"), "rgba(255,255,255,.4)"]]
+        : [["Prospects", view.length, "#9FD2F0"], ["Emailed", n(["emailed", "followed_up"]), "#FFC940"], ["Replied", n("replied"), GR], ["Won", n("won"), GR], ["Dead", n("dead"), "rgba(255,255,255,.4)"]];
+      return (<div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(100px,1fr))", gap: 10, marginBottom: 16 }}>
+        {cells.map(([l, v, c], i) => (
+          <div key={i} style={{ ...card, padding: "12px 14px" }}><div style={{ fontSize: 10, color: "rgba(255,255,255,.4)", textTransform: "uppercase", letterSpacing: ".5px" }}>{l}</div><div style={{ fontSize: 22, fontWeight: 800, color: c }}>{v}</div></div>
+        ))}
+      </div>);
+    })()}
 
     {angles.length > 0 && <div style={{ ...card, padding: "12px 16px", marginBottom: 16 }}>
       <div style={{ fontSize: 11, color: "rgba(255,255,255,.4)", textTransform: "uppercase", letterSpacing: ".8px", marginBottom: 8 }}>🏆 Winning angles (reply rate)</div>
@@ -140,23 +163,51 @@ export default function AdminOutreach() {
     </div>}
 
     {loading ? <p style={{ color: "rgba(255,255,255,.4)", padding: 30, textAlign: "center" }}>Loading…</p>
-      : rows.length === 0 ? <div style={{ ...card, padding: 40, textAlign: "center", color: "rgba(255,255,255,.45)" }}>No prospects yet. Run a search above to start building your outreach list.</div>
-      : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{rows.map((p) => {
+      : view.length === 0 ? <div style={{ ...card, padding: 40, textAlign: "center", color: "rgba(255,255,255,.45)" }}>{channel === "linkedin" ? "No LinkedIn profiles yet. Search above to start building your list." : "No prospects yet. Run a search above to start building your outreach list."}</div>
+      : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{view.map((p) => {
         const draft = drafts[p.id];
         const sentCount = p.touches.filter((t) => t.status === "sent" || t.status === "replied").length;
+        const isLI = (p.channel || "email") === "linkedin";
+        const overlay = busy === p.id && <div style={{ position: "absolute", inset: 0, background: "rgba(0,37,61,.55)", backdropFilter: "blur(1px)", zIndex: 5, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 10 }}><div style={{ display: "flex", alignItems: "center", gap: 10, background: `${B}33`, border: `1px solid ${BL}55`, borderRadius: 10, padding: "10px 18px" }}><span style={{ display: "inline-block", width: 16, height: 16, border: `2px solid ${BL}`, borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /><span style={{ fontSize: 13, fontWeight: 600 }}>Writing…</span></div></div>;
         return (<div key={p.id} style={{ ...card, padding: "16px 18px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
             <div style={{ minWidth: 220, flex: 1 }}>
-              <div style={{ fontWeight: 700, fontSize: 15 }}>{p.business || p.email}</div>
-              <div style={{ fontSize: 12, color: "rgba(255,255,255,.5)" }}>{p.email}{p.website ? ` · ` : ""}{p.website && <a href={p.website} target="_blank" rel="noreferrer" style={{ color: BL, textDecoration: "none" }}>site</a>}{p.city ? ` · ${p.city}` : ""}</div>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,.35)", marginTop: 2 }}>{sentCount > 0 ? `${sentCount} email${sentCount === 1 ? "" : "s"} sent` : "not contacted"}</div>
+              <div style={{ fontWeight: 700, fontSize: 15 }}>{p.business || p.name || (isLI ? "LinkedIn profile" : p.email)}</div>
+              {isLI
+                ? <div style={{ fontSize: 12, color: "rgba(255,255,255,.5)" }}>{p.name ? `${p.name} · ` : ""}{p.linkedin_url && <a href={p.linkedin_url} target="_blank" rel="noreferrer" style={{ color: BL, textDecoration: "none" }}>View profile ↗</a>}{p.city ? ` · ${p.city}` : ""}</div>
+                : <div style={{ fontSize: 12, color: "rgba(255,255,255,.5)" }}>{p.email}{p.website ? ` · ` : ""}{p.website && <a href={p.website} target="_blank" rel="noreferrer" style={{ color: BL, textDecoration: "none" }}>site</a>}{p.city ? ` · ${p.city}` : ""}</div>}
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,.35)", marginTop: 2 }}>{sentCount > 0 ? (isLI ? "invite sent" : `${sentCount} email${sentCount === 1 ? "" : "s"} sent`) : "not contacted"}</div>
             </div>
-            <span style={{ fontSize: 12, fontWeight: 700, color: statusColor[p.status] || "white", textTransform: "capitalize" }}>{p.status.replace(/_/g, " ")}</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: statusColor[p.status] || "white", textTransform: "capitalize" }}>{(isLI && p.status === "emailed" ? "invited" : p.status).replace(/_/g, " ")}</span>
           </div>
 
-          {draft ? (<div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${B}15`, position: "relative" }}>
-            {busy === p.id && <div style={{ position: "absolute", inset: 0, background: "rgba(0,37,61,.55)", backdropFilter: "blur(1px)", zIndex: 5, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 10 }}><div style={{ display: "flex", alignItems: "center", gap: 10, background: `${B}33`, border: `1px solid ${BL}55`, borderRadius: 10, padding: "10px 18px" }}><span style={{ display: "inline-block", width: 16, height: 16, border: `2px solid ${BL}`, borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /><span style={{ fontSize: 13, fontWeight: 600 }}>Writing a new pitch…</span></div></div>}
-            <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+          {isLI ? (draft ? (<div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${B}15`, position: "relative" }}>
+            {overlay}<style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,.5)", textTransform: "uppercase", letterSpacing: ".5px" }}>Connection note</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: (draft.connect_note || "").length > NOTE_LIMIT ? "#FF6B6B" : "rgba(255,255,255,.4)" }}>{(draft.connect_note || "").length}/{NOTE_LIMIT}</span>
+            </div>
+            <textarea value={draft.connect_note || ""} onChange={(e) => editDraft(p.id, "connect_note", e.target.value)} rows={3} style={{ ...inp, width: "100%", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5, marginBottom: 4, opacity: busy === p.id ? 0.4 : 1, borderColor: (draft.connect_note || "").length > NOTE_LIMIT ? "#FF6B6B" : undefined }} />
+            <button onClick={() => copyField(`${draft.id}:note`, draft.connect_note || "")} style={{ ...btnS, marginBottom: 12 }}>{copiedId === `${draft.id}:note` ? "✓ Copied note" : "📋 Copy note"}</button>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,.5)", textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 4 }}>Message (after they accept)</div>
+            <textarea value={draft.body} onChange={(e) => editDraft(p.id, "body", e.target.value)} rows={7} style={{ ...inp, width: "100%", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5, opacity: busy === p.id ? 0.4 : 1 }} />
+            <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+              {p.linkedin_url && <a href={p.linkedin_url} target="_blank" rel="noreferrer" style={{ ...btnP, textDecoration: "none" }}>Open profile ↗</a>}
+              <button onClick={() => copyField(`${draft.id}:msg`, draft.body)} style={btnP}>{copiedId === `${draft.id}:msg` ? "✓ Copied" : "📋 Copy message"}</button>
+              <button onClick={() => markSent(p, draft)} style={{ ...btnS, color: GR, borderColor: `${GR}55` }}>✓ Invite sent</button>
+              <button onClick={() => generate(p)} disabled={busy === p.id} style={{ ...btnS, opacity: busy === p.id ? 0.5 : 1 }}>{busy === p.id ? "⏳ Writing…" : "↻ Regenerate"}</button>
+            </div>
+          </div>) : (<div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", alignItems: "center", borderTop: `1px solid ${B}15`, paddingTop: 12 }}>
+            <button onClick={() => generate(p)} disabled={busy === p.id} style={{ ...btnP, opacity: busy === p.id ? 0.5 : 1 }}>{busy === p.id ? "Writing…" : sentCount > 0 ? "✍️ Write Follow-up" : "✍️ Generate note + message"}</button>
+            {p.linkedin_url && <a href={p.linkedin_url} target="_blank" rel="noreferrer" style={{ ...btnS, textDecoration: "none" }}>Open profile ↗</a>}
+            {p.status !== "connected" && p.status !== "replied" && <button onClick={() => setStatus(p, "connected")} style={{ ...btnS, color: "#7FD0FF", borderColor: "#7FD0FF55" }}>🤝 Connected</button>}
+            {p.status !== "replied" && <button onClick={() => setStatus(p, "replied")} style={{ ...btnS, color: GR, borderColor: `${GR}55` }}>💬 Replied</button>}
+            {p.status !== "won" && <button onClick={() => setStatus(p, "won")} style={btnS}>🎉 Won</button>}
+            {p.status !== "dead" && <button onClick={() => setStatus(p, "dead")} style={btnS}>✕ Dead</button>}
+            <button onClick={() => del(p)} style={{ ...btnS, color: "#FF6B6B", borderColor: "rgba(255,80,80,.3)", marginLeft: "auto" }}>Remove</button>
+          </div>))
+          : (draft ? (<div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${B}15`, position: "relative" }}>
+            {overlay}<style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
             <input value={draft.subject} onChange={(e) => editDraft(p.id, "subject", e.target.value)} style={{ ...inp, width: "100%", fontWeight: 600, marginBottom: 8, opacity: busy === p.id ? 0.4 : 1 }} />
             <textarea value={draft.body} onChange={(e) => editDraft(p.id, "body", e.target.value)} rows={8} style={{ ...inp, width: "100%", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5, opacity: busy === p.id ? 0.4 : 1 }} />
             <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
@@ -171,7 +222,7 @@ export default function AdminOutreach() {
             {p.status !== "won" && <button onClick={() => setStatus(p, "won")} style={btnS}>🎉 Won</button>}
             {p.status !== "dead" && <button onClick={() => setStatus(p, "dead")} style={btnS}>✕ Dead</button>}
             <button onClick={() => del(p)} style={{ ...btnS, color: "#FF6B6B", borderColor: "rgba(255,80,80,.3)", marginLeft: "auto" }}>Remove</button>
-          </div>)}
+          </div>))}
         </div>);
       })}</div>}
   </div>);
