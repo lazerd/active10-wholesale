@@ -26,7 +26,15 @@ export async function getGmailAccess(): Promise<string | null> {
     }),
   });
   if (!res.ok) {
-    console.error("Gmail token refresh failed:", await res.text());
+    const errText = await res.text();
+    console.error("Gmail token refresh failed:", errText);
+    // The refresh token is dead (expired/revoked — e.g. a "Testing" OAuth app
+    // expires them after 7 days). Clear it so the UI correctly shows "not
+    // connected" and surfaces the Connect button again, instead of a misleading
+    // green "connected" state that can never actually send.
+    if (errText.includes("invalid_grant")) {
+      await supabase.from("gmail_tokens").update({ refresh_token: null, access_token: null }).eq("id", "default");
+    }
     return null;
   }
   const t = await res.json();
