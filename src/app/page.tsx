@@ -11,6 +11,7 @@ import CustomerReferral from "@/components/CustomerReferral";
 import AdminOutreach from "@/components/AdminOutreach";
 
 const B = "#0072BC", BL = "#0088DD", BD = "#005A96", BBG = "#003A5C", BDP = "#00253D", GR = "#00B894";
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "";
 
 // Types
 type Product = { id: string; name: string; subtitle: string; retail: number; img: string; badge: string | null; cat: string; color: string; sort_order: number };
@@ -83,6 +84,7 @@ export default function App() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [customerSearch, setCustomerSearch] = useState("");
   const [appSubmitted, setAppSubmitted] = useState(false);
+  const [capToken, setCapToken] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [payMethod, setPayMethod] = useState("check");
   const [showChangePw, setShowChangePw] = useState(false);
@@ -160,6 +162,43 @@ export default function App() {
   // ─────────────────────────────────────────────────────────────────────────
 
   useEffect(() => { supabase.from("products").select("*").eq("active", true).order("sort_order").then(({ data }) => { if (data) setProducts(data as Product[]); }); }, []);
+  // Render the Cloudflare Turnstile (CAPTCHA) widget on the application form. No-op until
+  // NEXT_PUBLIC_TURNSTILE_SITE_KEY is set, so the form keeps working before keys are configured.
+  useEffect(() => {
+    if (!TURNSTILE_SITE_KEY || authView !== "apply" || appSubmitted) return;
+    let widgetId: unknown;
+    let cancelled = false;
+    const render = () => {
+      const ts = (window as any).turnstile;
+      const el = document.getElementById("cf-turnstile-apply");
+      if (cancelled || !ts || !el || el.hasChildNodes()) return;
+      widgetId = ts.render("#cf-turnstile-apply", {
+        sitekey: TURNSTILE_SITE_KEY,
+        theme: "dark",
+        callback: (t: string) => setCapToken(t),
+        "expired-callback": () => setCapToken(""),
+        "error-callback": () => setCapToken(""),
+      });
+    };
+    let poll: ReturnType<typeof setInterval> | undefined;
+    if ((window as any).turnstile) { render(); }
+    else if (!document.getElementById("cf-turnstile-script")) {
+      const s = document.createElement("script");
+      s.id = "cf-turnstile-script";
+      s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      s.async = true; s.defer = true; s.onload = render;
+      document.head.appendChild(s);
+    } else {
+      poll = setInterval(() => { if ((window as any).turnstile) { if (poll) clearInterval(poll); render(); } }, 200);
+    }
+    return () => {
+      cancelled = true;
+      if (poll) clearInterval(poll);
+      const ts = (window as any).turnstile;
+      if (widgetId && ts) { try { ts.remove(widgetId); } catch {} }
+      setCapToken("");
+    };
+  }, [authView, appSubmitted]);
   useEffect(() => { if (!customer) { setLastOrder(null); return; } let active = true; (async () => { const { data: s } = await supabase.auth.getSession(); const token = s.session?.access_token; if (!token) return; try { const r = await fetch("/api/my-last-order", { headers: { Authorization: `Bearer ${token}` } }); const d = await r.json(); if (active) setLastOrder(d.order || null); } catch {} })(); return () => { active = false; }; }, [customer]);
   // Restore a saved (abandoned) cart when the customer returns, if their cart is empty.
   useEffect(() => { if (!customer || isAdmin || isAffiliate) return; if (Object.keys(cart).length > 0) return; let active = true; (async () => { const { data: s } = await supabase.auth.getSession(); const token = s.session?.access_token; if (!token) return; try { const r = await fetch("/api/cart/save", { headers: { Authorization: `Bearer ${token}` } }); const d = await r.json(); if (active && d.items?.length) { const next: Record<string, number> = {}; for (const it of d.items) if (products.find(p => p.id === it.product_id)) next[it.product_id] = Number(it.qty || 0); if (Object.keys(next).length) setCart(next); } } catch {} })(); return () => { active = false; }; }, [customer, products]);
@@ -196,7 +235,7 @@ export default function App() {
   const login = async () => { setLoginError(""); const e = loginForm.email.trim().toLowerCase(), p = loginForm.password.trim(); if (!e || !p) { setLoginError("Please enter your credentials."); return; } const { error } = await supabase.auth.signInWithPassword({ email: e, password: p }); if (error) setLoginError(error.message === "Invalid login credentials" ? "Invalid email or password." : error.message); };
   const logout = async () => { await supabase.auth.signOut(); setSession(null); setIsAdmin(false); setIsAffiliate(false); setCustomer(null); setLoginForm({ email: "", password: "" }); setView("shop"); setCart({}); setSelectedCustomer(null); setAppliedCode(""); setAppliedPct(0); setAppliedFreeShip(false); setAppliedType(""); setAppliedSamples(0); setApplyCreditOn(false); setCodeInput(""); setCodeMsg(null); };
 
-  const submitApplication = async () => { const r = { name: appForm.name, email: appForm.email, phone: appForm.phone, business: appForm.business, address: appForm.address, city: appForm.city, state: appForm.state, zip: appForm.zip, type: appForm.type, ...(refSlug ? { affiliate_slug: refSlug } : {}), ...(inviteCode ? { referred_by_code: inviteCode } : {}) }; const { error } = await supabase.from("applications").insert(r); if (!error) { setAppSubmitted(true); fetch("/api/webhook", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "application", record: r }) }).catch(() => {}); } };
+  const submitApplication = async () => { if (TURNSTILE_SITE_KEY && !capToken) { alert("Please complete the verification challenge below."); return; } const r = { name: appForm.name, email: appForm.email, phone: appForm.phone, business: appForm.business, address: appForm.address, city: appForm.city, state: appForm.state, zip: appForm.zip, type: appForm.type, ...(refSlug ? { affiliate_slug: refSlug } : {}), ...(inviteCode ? { referred_by_code: inviteCode } : {}) }; try { const res = await fetch("/api/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...r, captchaToken: capToken }) }); const d = await res.json(); if (d.ok) { setAppSubmitted(true); fetch("/api/webhook", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "application", record: r }) }).catch(() => {}); } else { alert("Error: " + (d.error || "Could not submit application. Please try again.")); if (TURNSTILE_SITE_KEY) { try { (window as any).turnstile?.reset(); } catch {} setCapToken(""); } } } catch { alert("Could not submit application. Please check your connection and try again."); } };
 
   const applyCode = async () => {
     if (!customer || codeChecking) return;
@@ -339,6 +378,7 @@ const submitManualOrder = async () => { if (!manualCustomerId) { alert("Select a
             <p style={{ color: "rgba(255,255,255,.5)", fontSize: 14, marginBottom: 24 }}>We'll review within 24 hours.</p>
             {[{ l: "Practice Name", k: "business" }, { l: "Full Name", k: "name" }, { l: "Email", k: "email" }, { l: "Phone", k: "phone" }, { l: "Street Address", k: "address" }, { l: "City", k: "city" }, { l: "State", k: "state" }, { l: "Zip Code", k: "zip" }].map(f => (<div key={f.k} style={{ marginBottom: 16 }}><label style={{ display: "block", color: "rgba(255,255,255,.5)", fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: ".8px" }}>{f.l}</label><input value={(appForm as any)[f.k]} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAppForm(p => ({ ...p, [f.k]: e.target.value }))} style={inp} /></div>))}
             <div style={{ marginBottom: 24 }}><label style={{ display: "block", color: "rgba(255,255,255,.5)", fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: ".8px" }}>Type</label><select value={appForm.type} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setAppForm(p => ({ ...p, type: e.target.value }))} style={{ ...inp, color: "rgba(255,255,255,.7)" }}><option>Active 10 Wholesale Customer</option><option>Chiropractor</option><option>Physical Therapy</option><option>Massage Therapy</option><option>Medical Doctor</option><option>Other</option></select></div>
+            {TURNSTILE_SITE_KEY && <div id="cf-turnstile-apply" style={{ marginBottom: 16, minHeight: 65 }} />}
             <button onClick={submitApplication} className="bh" style={{ ...btnP, width: "100%", padding: 14, fontSize: 15, fontWeight: 700, marginBottom: 12 }}>Submit Application</button>
             <button onClick={() => setAuthView("login")} style={{ width: "100%", padding: 12, background: "none", border: `1px solid ${B}33`, borderRadius: 10, color: "rgba(255,255,255,.6)", fontSize: 14, cursor: "pointer" }}>Already have an account? Sign in</button>
           </div>
