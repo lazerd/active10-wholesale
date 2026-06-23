@@ -1,0 +1,62 @@
+<svg width="1200" height="1500" viewBox="0 0 1200 1500" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#00253D"/>
+      <stop offset="0.55" stop-color="#003A5C"/>
+      <stop offset="1" stop-color="#005A96"/>
+    </linearGradient>
+    <linearGradient id="logoG" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0072BC"/><stop offset="1" stop-color="#0088DD"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F4D77A"/><stop offset="1" stop-color="#E8C76A"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.36" r="0.6">
+      <stop offset="0" stop-color="#0088DD" stop-opacity="0.4"/><stop offset="1" stop-color="#0088DD" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="cta" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#0072BC"/><stop offset="1" stop-color="#00A8E8"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="1500" fill="url(#bg)"/>
+  <rect width="1200" height="1500" fill="url(#glow)"/>
+  <circle cx="1080" cy="180" r="240" fill="none" stroke="#0088DD" stroke-opacity="0.10" stroke-width="2"/>
+  <circle cx="120" cy="1340" r="300" fill="none" stroke="#0088DD" stroke-opacity="0.10" stroke-width="2"/>
+  <rect x="36" y="36" width="1128" height="1428" rx="28" fill="none" stroke="#0088DD" stroke-opacity="0.22" stroke-width="2"/>
+
+  <!-- Header -->
+  <rect x="530" y="78" width="140" height="140" rx="32" fill="url(#logoG)"/>
+  <text x="600" y="172" font-family="Arial, Helvetica, sans-serif" font-size="58" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="2">A10</text>
+  <text x="600" y="272" font-family="Arial, Helvetica, sans-serif" font-size="40" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="1">ACTIVE FORMULATIONS</text>
+  <text x="600" y="308" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="700" fill="#7FC5EC" text-anchor="middle" letter-spacing="7">WHOLESALE PARTNER PROGRAM</text>
+
+  <rect x="395" y="338" width="410" height="44" rx="22" fill="#E8C76A" fill-opacity="0.14" stroke="#E8C76A" stroke-opacity="0.5" stroke-width="1.5"/>
+  <text x="600" y="367" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="800" fill="#F4D77A" text-anchor="middle" letter-spacing="5">EXCLUSIVE · DIRECTORS CLUB</text>
+
+  <!-- Offer -->
+  <text x="600" y="502" font-family="Arial, Helvetica, sans-serif" font-size="132" font-weight="900" fill="url(#gold)" text-anchor="middle" letter-spacing="-2">20% OFF</text>
+  <text x="600" y="560" font-family="Arial, Helvetica, sans-serif" font-size="46" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="2">+ FREE SHIPPING</text>
+  <text x="600" y="600" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="500" fill="#9FD2F0" text-anchor="middle">on your first wholesale order</text>
+
+  <!-- Coupon -->
+  <rect x="310" y="638" width="580" height="118" rx="18" fill="#ffffff" fill-opacity="0.04" stroke="#7FC5EC" stroke-opacity="0.7" stroke-width="2.5" stroke-dasharray="11 9"/>
+  <text x="600" y="688" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" fill="#9FD2F0" text-anchor="middle" letter-spacing="6">USE CODE AT CHECKOUT</text>
+  <text x="600" y="738" font-family="'Courier New', monospace" font-size="46" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="3">DCAMEMBERSONLY</text>
+
+  <!-- Products -->
+  <text x="600" y="846" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="800" fill="#F4D77A" text-anchor="middle" letter-spacing="6">PROFESSIONAL-GRADE RELIEF</text>
+
+  <rect x="80"  y="888" width="320" height="320" rx="24" fill="#ffffff"/>
+  <rect x="440" y="888" width="320" height="320" rx="24" fill="#ffffff"/>
+  <rect x="800" y="888" width="320" height="320" rx="24" fill="#ffffff"/>
+
+  <text x="240" y="1258" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">PLUS Tube · CBD</text>
+  <text x="600" y="1258" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">Original 8oz Pump</text>
+  <text x="960" y="1258" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">PLUS Roll-On</text>
+
+  <!-- CTA -->
+  <text x="600" y="1322" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="500" fill="#9FD2F0" text-anchor="middle">CBD &amp; topical pain relief at true wholesale pricing</text>
+  <rect x="350" y="1352" width="500" height="80" rx="40" fill="url(#cta)"/>
+  <text x="600" y="1403" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="1">wholesale.getactive10.com</text>
+</svg>

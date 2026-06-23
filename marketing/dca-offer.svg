@@ -1,0 +1,71 @@
+<svg width="1200" height="1500" viewBox="0 0 1200 1500" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#00253D"/>
+      <stop offset="0.55" stop-color="#003A5C"/>
+      <stop offset="1" stop-color="#005A96"/>
+    </linearGradient>
+    <linearGradient id="logoG" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0072BC"/>
+      <stop offset="1" stop-color="#0088DD"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F4D77A"/>
+      <stop offset="1" stop-color="#E8C76A"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.42" r="0.6">
+      <stop offset="0" stop-color="#0088DD" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#0088DD" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="cta" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#0072BC"/>
+      <stop offset="1" stop-color="#00A8E8"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="1500" fill="url(#bg)"/>
+  <rect width="1200" height="1500" fill="url(#glow)"/>
+
+  <!-- Decorative rings -->
+  <circle cx="1060" cy="200" r="240" fill="none" stroke="#0088DD" stroke-opacity="0.12" stroke-width="2"/>
+  <circle cx="150" cy="1320" r="320" fill="none" stroke="#0088DD" stroke-opacity="0.10" stroke-width="2"/>
+  <circle cx="1080" cy="1360" r="6" fill="#E8C76A" fill-opacity="0.6"/>
+  <circle cx="120" cy="240" r="5" fill="#E8C76A" fill-opacity="0.5"/>
+
+  <!-- Outer frame -->
+  <rect x="40" y="40" width="1120" height="1420" rx="28" fill="none" stroke="#0088DD" stroke-opacity="0.25" stroke-width="2"/>
+
+  <!-- Logo badge -->
+  <rect x="510" y="110" width="180" height="180" rx="40" fill="url(#logoG)"/>
+  <text x="600" y="232" font-family="Arial, Helvetica, sans-serif" font-size="74" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="2">A10</text>
+
+  <!-- Wordmark -->
+  <text x="600" y="360" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="1">ACTIVE FORMULATIONS</text>
+  <text x="600" y="402" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" fill="#7FC5EC" text-anchor="middle" letter-spacing="8">WHOLESALE PARTNER PROGRAM</text>
+
+  <!-- Eyebrow -->
+  <rect x="430" y="470" width="340" height="48" rx="24" fill="#E8C76A" fill-opacity="0.14" stroke="#E8C76A" stroke-opacity="0.5" stroke-width="1.5"/>
+  <text x="600" y="502" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="800" fill="#F4D77A" text-anchor="middle" letter-spacing="5">EXCLUSIVE · DIRECTORS CLUB</text>
+
+  <!-- Headline -->
+  <text x="600" y="600" font-family="Georgia, 'Times New Roman', serif" font-size="50" font-weight="700" fill="#ffffff" text-anchor="middle">A welcome offer, just for you.</text>
+
+  <!-- Big offer -->
+  <text x="600" y="760" font-family="Arial, Helvetica, sans-serif" font-size="170" font-weight="900" fill="url(#gold)" text-anchor="middle" letter-spacing="-2">20% OFF</text>
+  <text x="600" y="838" font-family="Arial, Helvetica, sans-serif" font-size="60" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="2">+ FREE SHIPPING</text>
+  <text x="600" y="892" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="500" fill="#9FD2F0" text-anchor="middle">on your first wholesale order</text>
+
+  <!-- Coupon code -->
+  <rect x="300" y="960" width="600" height="150" rx="20" fill="#ffffff" fill-opacity="0.04" stroke="#7FC5EC" stroke-opacity="0.7" stroke-width="2.5" stroke-dasharray="12 10"/>
+  <text x="600" y="1018" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" fill="#9FD2F0" text-anchor="middle" letter-spacing="6">USE CODE AT CHECKOUT</text>
+  <text x="600" y="1080" font-family="'Courier New', monospace" font-size="56" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="4">DCAMEMBERSONLY</text>
+
+  <!-- Tagline -->
+  <text x="600" y="1210" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="600" fill="#ffffff" text-anchor="middle">Professional-grade CBD &amp; topical pain relief —</text>
+  <text x="600" y="1252" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="600" fill="#ffffff" text-anchor="middle">at true wholesale pricing.</text>
+
+  <!-- CTA -->
+  <rect x="350" y="1320" width="500" height="84" rx="42" fill="url(#cta)"/>
+  <text x="600" y="1373" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="1">wholesale.getactive10.com</text>
+</svg>

@@ -11,7 +11,6 @@ const NOTIFY_EMAILS = [
 ];
 
 const PRODUCT_WEIGHTS: Record<string, number> = {
-  "original-jar-2oz":    4.2,
   "original-rollon-3oz": 5.1,
   "original-tube-4oz":   5.93,
   "original-pump-8oz":   11.5,
@@ -85,7 +84,6 @@ export async function POST(req: NextRequest) {
       const estWeight = estimateShippingWeight(items);
 
       const SKU_MAP: Record<string, string> = {
-        "original-jar-2oz": "001",
         "original-pump-8oz": "004",
         "original-tube-4oz": "008",
         "original-rollon-3oz": "009",
