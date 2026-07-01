@@ -141,6 +141,12 @@ export async function POST(req: NextRequest) {
       // Update application status
       await supabaseAdmin.from("applications").update({ status: "approved" }).eq("id", applicationId);
 
+      // If this approved customer was one of our outreach prospects, mark it won
+      // (best-effort; never blocks the approval). Powers the funnel's won count.
+      try {
+        await supabaseAdmin.from("outreach_prospects").update({ status: "won" }).ilike("email", app.email).neq("status", "won");
+      } catch (e) { console.error("outreach won-attribution:", e); }
+
       // ── Customer referral: link the new practice to its referrer, mark the
       // referral "joined", and create their welcome offer (20% + free shipping
       // + 25 sample packets) as a reusable winback_offers row.

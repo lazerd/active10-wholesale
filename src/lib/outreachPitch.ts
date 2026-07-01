@@ -10,6 +10,13 @@ const SITE = "https://wholesale.getactive10.com";
 // This is the first touch for every prospect; AI angles kick in on follow-ups.
 export function founderLetter(p: Prospect): Pitch {
   const first = p.name ? p.name.split(" ")[0] : "there";
+  // Club pro-shop first touch — from Darrin & June, anchored on Jarrett Chirico.
+  if ((p.type || "") === "club") {
+    return {
+      subject: "jarrett chirico + your pro shop",
+      body: `Hi ${first},\n\nI'll keep this short. I'm Darrin Cohen — I run the tennis program at Sleepy Hollow — and my cofounder June Munroe and I make Active 10, a topical recovery cream players reach for after a tough match. Fast-acting, made in the USA, hemp-derived and THC-free.\n\nHere's why I'm emailing you specifically: Jarrett Chirico has carried Active 10 in his pro shop — at his last club and now at North Hills — and both times it was one of his best sellers at the counter. Players try it, feel the difference, and come back for more. Easy margin for the shop, and it genuinely helps your members.\n\nRather than pitch you, I'd just send you a sample. Try it after your own match, put a few on the counter, and see what your players say. No cost, no sales call.\n\nIf it earns a spot in your shop, setting up a wholesale account takes about two minutes at wholesale.getactive10.com.\n\nJust reply with where to ship and I'll get a sample out this week. Thanks for reading this far.\n\nDarrin & June\nActive 10\n800-636-4130`,
+    };
+  }
   return {
     subject: "free samples, no sales call",
     body: `Hi ${first},\n\nI'll keep this short because I know your day is booked back to back.\n\nMy name is Darrin and I make Active 10, a topical pain relief cream. Chiropractors were our first real customers. Before we ever sold a single jar online, it was DCs using it on patients during adjustments and selling it at the front desk. Years later, that's still the heart of the business — hundreds of practices around the country carry it now.\n\nThe short version of why it sticks: patients use it after their adjustment and between visits, they feel the difference, and they come back to your front desk asking for more. It sells itself once it's on the shelf, and the margins actually make it worth shelf space.\n\nBut I'd rather you judge that yourself than take my word for it. Reply with your shipping address and I'll personally get samples in the mail to you this week. No catch, no sales call, no ten-email follow-up sequence. Try it on yourself, try it on a few patients, and see what they say.\n\nIf it earns a spot in your practice, setting up a wholesale account takes about two minutes at wholesale.getactive10.com — opening orders get 20% off plus free shipping.\n\nEither way, thanks for reading this far. I mean that.\n\nDarrin Cohen\nFounder, Active 10\n800-636-4130`,
@@ -23,6 +30,12 @@ export const ANGLES: Record<string, { key: string; label: string }[]> = {
     { key: "pull_through", label: "Patient demand & free samples" },
     { key: "clinical", label: "Professional-grade relief" },
     { key: "trial", label: "Low-risk first order" },
+  ],
+  club: [
+    { key: "proshop_intro", label: "Darrin & June letter (Chirico proof + free sample)" },
+    { key: "margin", label: "Pro-shop margin / counter impulse buy" },
+    { key: "player_demand", label: "Player demand & free samples" },
+    { key: "trial", label: "Low-risk first order (no minimum)" },
   ],
   affiliate: [
     { key: "commission", label: "Earn commission referring practices" },
@@ -49,7 +62,31 @@ function biz(p: Prospect) {
   return p.business || "your practice";
 }
 
+// Club pro-shop templates (used when Gemini is off). Distinct copy from the
+// healthcare templates; all reference the pro-shop counter + free sample.
+export function clubTemplatePitch(p: Prospect, angle: string): Pitch {
+  const first = hi(p);
+  const b = p.business || "your club";
+  const T: Record<string, Pitch> = {
+    proshop_intro: founderLetter(p),
+    margin: {
+      subject: `a counter product for the ${b} pro shop`,
+      body: `Hi ${first},\n\nQuick idea for the pro shop at ${b}: Active 10 is a topical recovery cream (made in the USA, hemp-derived, THC-free) that players buy right at the counter after a match. Wholesale runs about 50% off retail, so it's easy margin on a small footprint.\n\nJarrett Chirico has it in his shop at North Hills and it's been one of his best sellers. Want me to send a free sample so you can see for yourself?\n\nDarrin & June\nActive 10\n${SITE}`,
+    },
+    player_demand: {
+      subject: `what your players use after a match`,
+      body: `Hi ${first},\n\nFollowing up — the reason Active 10 works in a pro shop is pull-through: players try it after a tough match, feel the difference, and come back to the counter for more. We'll send free samples to get it started, no cost and no commitment.\n\nCan I mail a sample to ${b}? Just reply with a shipping address.\n\nDarrin & June\nActive 10\n${SITE}`,
+    },
+    trial: {
+      subject: `an easy first order for ${b}`,
+      body: `Hi ${first},\n\nI know adding a product to the shop is a hassle, so we make the first order easy — no minimum, free shipping, and free samples to try first. If even a few of your players like it, it earns its shelf space.\n\nHappy to set ${b} up whenever you're ready. Want a sample first?\n\nDarrin & June\nActive 10\n${SITE}`,
+    },
+  };
+  return T[angle] || T.margin;
+}
+
 export function templatePitch(p: Prospect, angle: string): Pitch {
+  if ((p.type || "") === "club") return clubTemplatePitch(p, angle);
   const first = hi(p);
   const b = biz(p);
   const T: Record<string, Pitch> = {
@@ -107,11 +144,17 @@ async function geminiPitch(p: Prospect, angle: string, opts: PitchOpts = {}): Pr
     passive: "passive income with automatic tracking and transparent payouts — nothing to chase",
     audience: "they can monetize their health-focused audience with an affiliate link",
   };
+  const isClub = (p.type || "") === "club";
+  const clubAngleHint: Record<string, string> = {
+    margin: "the pro shop can stock Active 10 and sell it at the counter at a ~50%-off-retail wholesale margin — easy revenue on a tiny footprint",
+    player_demand: "players try it after a match, feel the difference, and come back to the counter for more; we send free samples to start that pull-through",
+    trial: "a genuinely low-risk first order: no minimum, free shipping, free samples first — if a few players like it, it earns its shelf space",
+  };
   const tone = TONES[opts.tone || "human"] || TONES.human;
   const lengthRule = opts.length === "medium" ? "4–6 short sentences, under 110 words" : opts.length === "tiny" ? "2–3 sentences, under 45 words" : "3–4 short sentences, under 75 words";
   const research = (p.research || "").trim();
 
-  const prompt = `You're Darrin Cohen, founder of Active 10 (professional-grade CBD & topical pain-relief products for healthcare practices — wholesale.getactive10.com). Write ONE cold outreach email that actually gets a reply.
+  const hcPrompt = `You're Darrin Cohen, founder of Active 10 (professional-grade CBD & topical pain-relief products for healthcare practices — wholesale.getactive10.com). Write ONE cold outreach email that actually gets a reply.
 
 Recipient: ${p.name || "the practice owner"} at "${p.business || "a " + (p.type || "chiropractic") + " practice"}"${p.city ? ` in ${p.city}` : ""}.
 The hook: ${angleHint[angle] || angleHint.margin}.
@@ -139,6 +182,38 @@ What makes it work (follow strictly):
 BANNED (never use): "I hope this email finds you well", "I hope you're doing well", "I'm reaching out", "I wanted to reach out", "in today's", "fast-paced", "elevate", "seamless", "cutting-edge", "innovative", "exciting opportunity", "game-changer", "leverage", "synergy", "passionate about", "revolutionary", "unlock", "—" em-dashes, and corporate buzzwords. No fake personalization you can't back up — if no website info was given, don't invent details.
 ${opts.instructions ? `\nExtra direction from Darrin (follow this): ${opts.instructions}\n` : ""}
 Return ONLY valid JSON: {"subject":"...","body":"..."} with \\n for line breaks in the body.`;
+
+  const clubPrompt = `You're Darrin Cohen. You and your cofounder June Munroe make Active 10, a topical recovery cream (made in the USA, hemp-derived, THC-free) that racquet players use after a match. You sell it wholesale to private-club PRO SHOPS to stock at the counter. Write ONE cold outreach email to a club's racquets director / GM that actually gets a reply.
+
+Recipient: ${p.name || "the racquets director"} at "${p.business || "a private club"}"${p.city ? ` in ${p.city}` : ""}.
+The hook: ${clubAngleHint[angle] || clubAngleHint.margin}.
+Proof you can reference (true): Jarrett Chirico (Dir. of Racquets, North Hills Club) carries Active 10 in his pro shop and it's been one of his best sellers.
+${research ? `\nWhat their club's website says (USE THIS — open with one specific, true detail from it, stated casually, never flattery):\n"""${research.slice(0, 1200)}"""\n` : ""}
+Two examples of the QUALITY BAR — match their feel and specificity (do NOT copy the content):
+
+EXAMPLE 1
+subject: jarrett chirico sent me your way
+body: Quick one — Jarrett Chirico stocks our recovery cream (Active 10) in his pro shop at North Hills and it's been a top seller at the counter. Players grab it after a match, love it, and come back. Want me to mail a free sample so you can see if your members go for it?\n\nDarrin & June
+
+EXAMPLE 2
+subject: a counter product players actually rebuy
+body: We make a topical recovery cream players reach for after a tough match, and pro shops keep about a 50% margin selling it at the counter. I'd rather just send you one than pitch you — mail a free sample to the shop? Just reply with an address.\n\nDarrin & June
+
+What makes it work (follow strictly):
+- Sound like a busy human who dashed off a quick, genuine note — NOT marketing copy.
+- Tone: ${tone}.
+- Length: ${lengthRule}. Shorter is better.
+- Subject line: lowercase, ~3–6 words, specific or curiosity-driven, never salesy.
+- Open with something specific to THEM (from their website info above if provided); never open with pleasantries.
+- Exactly ONE ask, a low-friction yes ("want me to send a free sample?") — not a hard sell.
+- Use contractions and plain words. No stacked adjectives. At most one exclamation point.
+- Sign off as just "Darrin & June" (unless the extra direction below specifies a different signature — then use that exactly).
+
+BANNED (never use): "I hope this email finds you well", "I hope you're doing well", "I'm reaching out", "I wanted to reach out", "in today's", "fast-paced", "elevate", "seamless", "cutting-edge", "innovative", "exciting opportunity", "game-changer", "leverage", "synergy", "passionate about", "revolutionary", "unlock", "—" em-dashes, and corporate buzzwords. No fake personalization you can't back up — if no website info was given, don't invent details.
+${opts.instructions ? `\nExtra direction from Darrin (follow this): ${opts.instructions}\n` : ""}
+Return ONLY valid JSON: {"subject":"...","body":"..."} with \\n for line breaks in the body.`;
+
+  const prompt = isClub ? clubPrompt : hcPrompt;
 
   // Pro first for writing quality (free tier allows low daily volume), then
   // flash fallbacks — Google retires/renames these periodically.
@@ -176,7 +251,8 @@ Return ONLY valid JSON: {"subject":"...","body":"..."} with \\n for line breaks 
 
 export async function generatePitch(p: Prospect, angle: string, opts: PitchOpts = {}): Promise<Pitch & { source: "ai" | "template"; aiError?: string }> {
   // The default letter is Darrin's own writing — never AI-rewritten.
-  if (angle === "founder_intro") return { ...founderLetter(p), source: "template" };
+  // (founder_intro = healthcare first touch; proshop_intro = club first touch.)
+  if (angle === "founder_intro" || angle === "proshop_intro") return { ...founderLetter(p), source: "template" };
   const ai = await geminiPitch(p, angle, opts);
   if (!("error" in ai)) return { ...ai, source: "ai" };
   return { ...templatePitch(p, angle), source: "template", aiError: ai.error };

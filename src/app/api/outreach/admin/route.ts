@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { generatePitch, generateLinkedInPitch, nextAngle, ANGLES } from "@/lib/outreachPitch";
 import { getGmailAccess, gmailSend, gmailRepliesFrom } from "@/lib/gmail";
+import { prepareBatch } from "@/lib/outreachBatch";
 
 const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
@@ -182,6 +183,13 @@ export async function POST(req: NextRequest) {
       await supabaseAdmin.from("outreach_prospects").update({ status }).eq("id", prospectId);
       if (status === "replied" && touchId) await supabaseAdmin.from("outreach_touches").update({ status: "replied" }).eq("id", touchId);
       return NextResponse.json({ ok: true });
+    }
+
+    // Draft-and-approve daily engine (shared with the cron). Prepares — does NOT
+    // send — the day's club drafts; Darrin reviews + one-click sends each.
+    if (action === "prepare_batch") {
+      const res = await prepareBatch();
+      return NextResponse.json({ ok: true, ...res });
     }
 
     if (action === "delete") {

@@ -34,6 +34,8 @@ export default function AdminOutreach() {
   const [standing, setStanding] = useState("");
   const [standingSaved, setStandingSaved] = useState(true);
   const [savingStanding, setSavingStanding] = useState(false);
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [preparing, setPreparing] = useState(false);
 
   const call = useCallback(async (payload: any) => {
     const { data: s } = await supabase.auth.getSession();
@@ -49,6 +51,7 @@ export default function AdminOutreach() {
 
   const sendGmail = async (p: Prospect, t: Touch) => { setBusy(t.id); setMsg(null); await call({ action: "update_touch", touchId: t.id, subject: t.subject, body: t.body }); const d = await call({ action: "send_gmail", touchId: t.id, prospectId: p.id }); setBusy(null); if (d.ok) { setDrafts((x) => { const n = { ...x }; delete n[p.id]; return n; }); setMsg({ t: `Sent to ${p.email} via Gmail.`, ok: true }); load(); } else { setMsg({ t: d.error || "Send failed", ok: false }); refreshGmail(); } };
   const checkReplies = async () => { setBusy("replies"); setMsg(null); const d = await call({ action: "check_replies" }); setBusy(null); if (d.ok) { setMsg({ t: `Checked Gmail — ${d.replies} new repl${d.replies === 1 ? "y" : "ies"} found.`, ok: true }); load(); } else { setMsg({ t: d.error || "Failed", ok: false }); refreshGmail(); } };
+  const runPrepare = async () => { setPreparing(true); setMsg(null); const d = await call({ action: "prepare_batch" }); setPreparing(false); if (d.ok) { setTypeFilter("club"); setMsg({ t: `Prepared ${d.firstTouch} new + ${d.recalibrate} follow-up draft${d.firstTouch + d.recalibrate === 1 ? "" : "s"}${d.replies ? `, folded in ${d.replies} repl${d.replies === 1 ? "y" : "ies"}` : ""}. Review & send below.`, ok: true }); load(); } else setMsg({ t: d.error || "Failed", ok: false }); };
   const disconnectGmail = async () => { if (!confirm("Disconnect Gmail?")) return; await fetch("/api/gmail/disconnect", { method: "POST" }); setGmail({ connected: false, email: null, configured: gmail.configured }); };
 
   const card: React.CSSProperties = { background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 14 };
@@ -83,7 +86,7 @@ export default function AdminOutreach() {
   const editDraft = (pid: string, field: "subject" | "body" | "connect_note", val: string) => setDrafts((x) => ({ ...x, [pid]: { ...x[pid], [field]: val } }));
   const saveStanding = async () => { setSavingStanding(true); const d = await call({ action: "save_settings", standing_instructions: standing }); setSavingStanding(false); if (d.ok) { setStandingSaved(true); setMsg({ t: "Standing rules saved — they'll apply to every pitch from now on.", ok: true }); } else setMsg({ t: d.error || "Save failed", ok: false }); };
 
-  const view = rows.filter((p) => (p.channel || "email") === channel);
+  const view = rows.filter((p) => (p.channel || "email") === channel && (typeFilter === "all" || (p.type || "") === typeFilter));
 
   return (<div>
     {/* Channel switch */}
@@ -102,6 +105,36 @@ export default function AdminOutreach() {
       </div>
     </div>}
 
+    {/* Club pro-shop funnel: daily draft-and-approve + goal to 300 */}
+    {channel === "email" && (() => {
+      const clubRows = rows.filter((p) => (p.type || "") === "club");
+      if (clubRows.length === 0) return null;
+      const won = clubRows.filter((p) => p.status === "won").length;
+      const contacted = clubRows.filter((p) => ["emailed", "followed_up", "replied", "won"].includes(p.status)).length;
+      const pct = Math.min(100, Math.round((won / 300) * 100));
+      return (<div style={{ ...card, padding: "14px 18px", marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>🎾 Club pro-shop funnel</div>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,.45)", marginTop: 2 }}>{clubRows.length} clubs loaded · {contacted} contacted · <span style={{ color: GR, fontWeight: 700 }}>{won} won</span> / 300 goal</div>
+          </div>
+          <button onClick={runPrepare} disabled={preparing} style={{ ...btnP, opacity: preparing ? 0.5 : 1 }}>{preparing ? "Preparing…" : "📝 Prepare today's drafts"}</button>
+        </div>
+        <div style={{ height: 8, background: "rgba(255,255,255,.08)", borderRadius: 6, marginTop: 10, overflow: "hidden" }}><div style={{ width: `${pct}%`, height: "100%", background: `linear-gradient(90deg,${B},${GR})` }} /></div>
+        <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,.4)" }}>Show:</span>
+          <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} style={{ ...inp, padding: "6px 10px", fontSize: 12 }}>
+            <option value="all">All types</option>
+            <option value="club">Club pro shops</option>
+            <option value="chiropractor">Chiropractors</option>
+            <option value="affiliate">Affiliates</option>
+            <option value="other">Other</option>
+          </select>
+          {gmail.connected && <button onClick={checkReplies} disabled={busy === "replies"} style={{ ...btnS, opacity: busy === "replies" ? 0.5 : 1 }}>{busy === "replies" ? "Checking…" : "🔄 Check replies"}</button>}
+        </div>
+      </div>);
+    })()}
+
     {channel === "linkedin" && <div style={{ ...card, padding: "12px 18px", marginBottom: 16, background: `${B}10`, borderColor: `${B}33` }}>
       <div style={{ fontSize: 13, fontWeight: 700, color: BL }}>🔗 LinkedIn assist — manual send</div>
       <div style={{ fontSize: 11, color: "rgba(255,255,255,.45)", marginTop: 3, lineHeight: 1.5 }}>Finds public profiles via web search and drafts your connection note + follow-up message. You copy and send each one yourself on LinkedIn — nothing is automated. Keep it to a handful a day on a healthy account.</div>
@@ -114,7 +147,7 @@ export default function AdminOutreach() {
         <div style={{ fontSize: 11, display: "flex", gap: 12, flexWrap: "wrap" }}><span style={{ color: aiOn ? GR : "#FFC940" }}>{aiOn ? "✨ Gemini AI pitches ON" : "📝 Template pitches"}</span><span style={{ color: searchOn ? GR : "#FFC940" }}>{searchOn ? "🔎 Brave search ON" : "🔎 Auto-search off (paste URLs)"}</span></div>
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-        <select value={type} onChange={(e) => setType(e.target.value)} style={{ ...inp, flex: "0 0 150px" }}><option value="chiropractor">Chiropractors</option><option value="affiliate">Affiliates</option><option value="other">Other</option></select>
+        <select value={type} onChange={(e) => setType(e.target.value)} style={{ ...inp, flex: "0 0 150px" }}><option value="chiropractor">Chiropractors</option><option value="club">Club pro shops</option><option value="affiliate">Affiliates</option><option value="other">Other</option></select>
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search, e.g. 'chiropractors in Walnut Creek CA'" style={{ ...inp, flex: 1, minWidth: 240 }} />
         <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="City (optional)" style={{ ...inp, flex: "0 0 160px" }} />
         <button onClick={scrape} disabled={busy === "scrape"} style={{ ...btnP, opacity: busy === "scrape" ? 0.5 : 1 }}>{busy === "scrape" ? "Scanning…" : channel === "linkedin" ? "Find Profiles" : "Find Prospects"}</button>
