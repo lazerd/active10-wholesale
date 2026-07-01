@@ -13,8 +13,8 @@ export function founderLetter(p: Prospect): Pitch {
   // Club pro-shop first touch — from Darrin & June, anchored on Jarrett Chirico.
   if ((p.type || "") === "club") {
     return {
-      subject: "jarrett chirico + your pro shop",
-      body: `Hi ${first},\n\nI'll keep this short. I'm Darrin Cohen — I run the tennis program at Sleepy Hollow — and my cofounder June Munroe and I make Active 10, a topical recovery cream players reach for after a tough match. Fast-acting, made in the USA, hemp-derived and THC-free.\n\nHere's why I'm emailing you specifically: Jarrett Chirico has carried Active 10 in his pro shop — at his last club and now at North Hills — and both times it was one of his best sellers at the counter. Players try it, feel the difference, and come back for more. Easy margin for the shop, and it genuinely helps your members.\n\nRather than pitch you, I'd just send you a sample. Try it after your own match, put a few on the counter, and see what your players say. No cost, no sales call.\n\nIf it earns a spot in your shop, setting up a wholesale account takes about two minutes at wholesale.getactive10.com.\n\nJust reply with where to ship and I'll get a sample out this week. Thanks for reading this far.\n\nDarrin & June\nActive 10\n800-636-4130`,
+      subject: "fellow dca member + your pro shop",
+      body: `Hi ${first},\n\nI'm Darrin Cohen — we're both members of the Directors Club of America, so I'll skip the hard sell and keep this one director to another.\n\nMy cofounder June Munroe and I make Active 10, a topical recovery cream players reach for after a tough match. Made in the USA, hemp-derived, THC-free.\n\nJarrett Chirico keeps it in his pro shop at North Hills (and carried it at his last club too), and both times it's been one of his best sellers at the counter. Players try it, feel the difference, and come back for more.\n\nI'd rather you judge it than take my word for it, so let me just send you a free sample — try it after your own match and put a few on the counter. No cost, no sales call.\n\nIf it earns a spot, the first order's easy: our DCA intro kit is 3 CBD tubes + 3 CBD roll-ons + 10 sample packets for $99 shipped — about $120 at normal wholesale, and $240 of retail on your counter.\n\nJust reply with where to ship the sample and I'll get one out this week. Thanks, ${first}.\n\nDarrin & June\nActive 10\n800-636-4130`,
     };
   }
   return {
@@ -71,15 +71,15 @@ export function clubTemplatePitch(p: Prospect, angle: string): Pitch {
     proshop_intro: founderLetter(p),
     margin: {
       subject: `a counter product for the ${b} pro shop`,
-      body: `Hi ${first},\n\nQuick idea for the pro shop at ${b}: Active 10 is a topical recovery cream (made in the USA, hemp-derived, THC-free) that players buy right at the counter after a match. Wholesale runs about 50% off retail, so it's easy margin on a small footprint.\n\nJarrett Chirico has it in his shop at North Hills and it's been one of his best sellers. Want me to send a free sample so you can see for yourself?\n\nDarrin & June\nActive 10\n${SITE}`,
+      body: `Hi ${first},\n\nCircling back, one DCA director to another. Active 10 is a topical recovery cream (made in the USA, hemp-derived, THC-free) that players buy right at the pro-shop counter after a match. Wholesale runs about 50% off retail, so it's real margin on a small footprint.\n\nJarrett Chirico has it in his shop at North Hills and it's been one of his best sellers. Want me to send a free sample so you can see for yourself?\n\nDarrin & June\nActive 10\n${SITE}`,
     },
     player_demand: {
       subject: `what your players use after a match`,
       body: `Hi ${first},\n\nFollowing up — the reason Active 10 works in a pro shop is pull-through: players try it after a tough match, feel the difference, and come back to the counter for more. We'll send free samples to get it started, no cost and no commitment.\n\nCan I mail a sample to ${b}? Just reply with a shipping address.\n\nDarrin & June\nActive 10\n${SITE}`,
     },
     trial: {
-      subject: `an easy first order for ${b}`,
-      body: `Hi ${first},\n\nI know adding a product to the shop is a hassle, so we make the first order easy — no minimum, free shipping, and free samples to try first. If even a few of your players like it, it earns its shelf space.\n\nHappy to set ${b} up whenever you're ready. Want a sample first?\n\nDarrin & June\nActive 10\n${SITE}`,
+      subject: `the dca intro kit for ${b}`,
+      body: `Hi ${first},\n\nCircling back with an easy first step: our DCA intro kit — 3 Active 10 PLUS CBD tubes, 3 CBD roll-ons, and 10 sample packets for $99 shipped. That's about $120 at normal wholesale and roughly $240 of retail on your counter, so it pays for itself fast with no minimum to commit to.\n\nWant me to send the kit out — or a free sample first?\n\nDarrin & June\nActive 10\n${SITE}`,
     },
   };
   return T[angle] || T.margin;
@@ -183,21 +183,23 @@ BANNED (never use): "I hope this email finds you well", "I hope you're doing wel
 ${opts.instructions ? `\nExtra direction from Darrin (follow this): ${opts.instructions}\n` : ""}
 Return ONLY valid JSON: {"subject":"...","body":"..."} with \\n for line breaks in the body.`;
 
-  const clubPrompt = `You're Darrin Cohen. You and your cofounder June Munroe make Active 10, a topical recovery cream (made in the USA, hemp-derived, THC-free) that racquet players use after a match. You sell it wholesale to private-club PRO SHOPS to stock at the counter. Write ONE cold outreach email to a club's racquets director / GM that actually gets a reply.
+  const clubPrompt = `You're Darrin Cohen, a member of the Directors Club of America (DCA). You and your cofounder June Munroe make Active 10, a topical recovery cream (made in the USA, hemp-derived, THC-free) that racquet players use after a match. You sell it wholesale to private-club PRO SHOPS to stock at the counter. Write ONE cold outreach email to a fellow DCA member (a club's racquets director / GM) that actually gets a reply.
 
-Recipient: ${p.name || "the racquets director"} at "${p.business || "a private club"}"${p.city ? ` in ${p.city}` : ""}.
+Recipient: ${p.name || "the racquets director"} at "${p.business || "a private club"}"${p.city ? ` in ${p.city}` : ""} — a fellow DCA member.
+Lead with the shared DCA membership as the natural reason you're reaching out — one director to another, not a cold stranger. Never say you run a tennis program anywhere.
 The hook: ${clubAngleHint[angle] || clubAngleHint.margin}.
-Proof you can reference (true): Jarrett Chirico (Dir. of Racquets, North Hills Club) carries Active 10 in his pro shop and it's been one of his best sellers.
+Proof you can reference (true): Jarrett Chirico (fellow DCA member, Dir. of Racquets at North Hills Club) carries Active 10 in his pro shop and it's been one of his best sellers.
+Intro offer you may mention (only if it fits naturally): the "DCA intro kit" — 3 Active 10 PLUS CBD tubes + 3 CBD roll-ons + 10 sample packets for $99 shipped (about $120 at normal wholesale, and $240 of retail on their counter). Do NOT invent other prices.
 ${research ? `\nWhat their club's website says (USE THIS — open with one specific, true detail from it, stated casually, never flattery):\n"""${research.slice(0, 1200)}"""\n` : ""}
 Two examples of the QUALITY BAR — match their feel and specificity (do NOT copy the content):
 
 EXAMPLE 1
-subject: jarrett chirico sent me your way
-body: Quick one — Jarrett Chirico stocks our recovery cream (Active 10) in his pro shop at North Hills and it's been a top seller at the counter. Players grab it after a match, love it, and come back. Want me to mail a free sample so you can see if your members go for it?\n\nDarrin & June
+subject: fellow dca member
+body: Mark — we're both in the DCA, so I'll skip the pitch. My cofounder and I make a recovery cream (Active 10) players grab after a match; Jarrett Chirico keeps it in his North Hills pro shop and it's been a top seller. Want me to mail you a free sample to try at the counter?\n\nDarrin & June
 
 EXAMPLE 2
-subject: a counter product players actually rebuy
-body: We make a topical recovery cream players reach for after a tough match, and pro shops keep about a 50% margin selling it at the counter. I'd rather just send you one than pitch you — mail a free sample to the shop? Just reply with an address.\n\nDarrin & June
+subject: one director to another
+body: Quick one from a fellow DCA member — our recovery cream sells at the pro-shop counter at about a 50% margin and players actually come back for more. I'd rather send you one than pitch you. Mail a free sample to the shop? Just reply with an address.\n\nDarrin & June
 
 What makes it work (follow strictly):
 - Sound like a busy human who dashed off a quick, genuine note — NOT marketing copy.
