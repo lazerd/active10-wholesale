@@ -623,7 +623,6 @@ const submitManualOrder = async () => { if (!manualCustomerId) { alert("Select a
         const inCart = (cart["dca-intro-kit"] || 0) > 0;
         return (<div style={{ background: `linear-gradient(135deg,${B}22,${GR}18)`, border: `1px solid ${GR}55`, borderRadius: 16, padding: "18px 24px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 14, animation: "su .5s ease" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <span style={{ fontSize: 30 }}>🎾</span>
             <div>
               <div style={{ fontSize: 16, fontWeight: 800 }}>New-customer intro kit — $99</div>
               <div style={{ fontSize: 12.5, color: "rgba(255,255,255,.6)", marginTop: 2, lineHeight: 1.5 }}>3 Active 10 PLUS CBD tubes + 3 CBD roll-ons + 10 sample packets. About $120 at normal wholesale, ~$240 retail on your shelf. First order only.</div>
