@@ -49,10 +49,19 @@ export async function prepareBatch(): Promise<{ firstTouch: number; recalibrate:
     await sb.from("outreach_touches").insert({ prospect_id: p.id, angle, subject: pitch.subject, body: pitch.body, status: "draft" });
   };
 
-  // 2) First-touch drafts.
+  // 2) First-touch drafts. Prefer club-domain (work) emails over personal
+  // (gmail/hotmail/etc.) so the reliable, low-bounce addresses go out first —
+  // protects a new sender's reputation. Nothing is dropped, just sequenced.
+  const PERSONAL_DOMAINS = new Set(["gmail.com", "yahoo.com", "hotmail.com", "aol.com", "outlook.com", "icloud.com", "comcast.net", "live.com", "me.com", "msn.com", "att.net", "bellsouth.net", "verizon.net", "mail.ru", "googlemail.com", "mac.com", "windstream.net"]);
+  const isPersonal = (email: string) => PERSONAL_DOMAINS.has((email.split("@")[1] || "").toLowerCase());
   let firstTouch = 0;
-  const { data: fresh } = await sb.from("outreach_prospects").select("*").eq("type", "club").eq("status", "prospected").order("created_at", { ascending: true }).limit(quota + 50);
-  for (const p of fresh || []) {
+  const { data: freshRaw } = await sb.from("outreach_prospects").select("*").eq("type", "club").eq("status", "prospected").limit(1000);
+  const fresh = (freshRaw || []).sort((a, b) => {
+    const pa = isPersonal(a.email || "") ? 1 : 0, pb = isPersonal(b.email || "") ? 1 : 0;
+    if (pa !== pb) return pa - pb;                       // work-domain first
+    return (a.created_at || "").localeCompare(b.created_at || "");
+  });
+  for (const p of fresh) {
     if (firstTouch >= quota) break;
     if (hasDraft.has(p.id)) continue;
     await draftFor(p, "proshop_intro");
