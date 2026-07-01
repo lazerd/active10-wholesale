@@ -75,7 +75,7 @@ export default function SamplePage() {
     <div style={{ minHeight: "100vh", background: "radial-gradient(1200px 600px at 50% -10%, #003A5C 0%, #00131f 55%, #000 100%)", color: "white", fontFamily: "system-ui, sans-serif", padding: "48px 20px" }}>
       <div style={{ maxWidth: 540, margin: "0 auto" }}>
         <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <h1 style={{ fontSize: 34, fontWeight: 900, margin: 0, letterSpacing: "-.5px" }}>Active <span style={{ color: BL }}>10</span></h1>
+          <a href="/" style={{ textDecoration: "none", color: "white" }}><h1 style={{ fontSize: 34, fontWeight: 900, margin: 0, letterSpacing: "-.5px" }}>Active <span style={{ color: BL }}>10</span></h1></a>
           <p style={{ color: "rgba(255,255,255,.45)", fontSize: 13, letterSpacing: "2.5px", textTransform: "uppercase", marginTop: 6 }}>Free Sample — No Sales Call</p>
         </div>
 
@@ -109,6 +109,10 @@ export default function SamplePage() {
             <p style={{ color: "rgba(255,255,255,.3)", fontSize: 12, textAlign: "center", marginTop: 14 }}>No sales call. No catch. Just a sample.</p>
           </div>
         )}
+        <div style={{ textAlign: "center", marginTop: 24, paddingTop: 20, borderTop: `1px solid ${B}22` }}>
+          <a href="/" style={{ color: BL, fontSize: 14, fontWeight: 600, textDecoration: "none" }}>Set up a wholesale account &amp; see pricing →</a>
+          <p style={{ color: "rgba(255,255,255,.3)", fontSize: 12, marginTop: 8 }}>Already have an account? <a href="/" style={{ color: "rgba(255,255,255,.55)" }}>Log in</a></p>
+        </div>
       </div>
     </div>
   );
