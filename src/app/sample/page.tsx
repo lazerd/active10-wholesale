@@ -54,7 +54,7 @@ export default function SamplePage() {
   const submit = async () => {
     if (submitting) return;
     setErr("");
-    if (!form.business || !form.name || !form.email || !form.address) { setErr("Please fill in your practice, name, email, and shipping address."); return; }
+    if (!form.business || !form.name || !form.email || !form.address) { setErr("Please fill in your business, name, email, and shipping address."); return; }
     if (TURNSTILE_SITE_KEY && !capToken) { setErr("Please complete the verification challenge below."); return; }
     setSubmitting(true);
     try {
@@ -67,7 +67,7 @@ export default function SamplePage() {
   };
 
   const fields: { l: string; k: keyof typeof form }[] = [
-    { l: "Practice Name", k: "business" }, { l: "Your Name", k: "name" }, { l: "Email", k: "email" }, { l: "Phone", k: "phone" },
+    { l: "Business Name", k: "business" }, { l: "Your Name", k: "name" }, { l: "Email", k: "email" }, { l: "Phone", k: "phone" },
     { l: "Shipping Address", k: "address" }, { l: "City", k: "city" }, { l: "State", k: "state" }, { l: "Zip Code", k: "zip" },
   ];
 
@@ -76,20 +76,20 @@ export default function SamplePage() {
       <div style={{ maxWidth: 540, margin: "0 auto" }}>
         <div style={{ textAlign: "center", marginBottom: 28 }}>
           <h1 style={{ fontSize: 34, fontWeight: 900, margin: 0, letterSpacing: "-.5px" }}>Active <span style={{ color: BL }}>10</span></h1>
-          <p style={{ color: "rgba(255,255,255,.45)", fontSize: 13, letterSpacing: "2.5px", textTransform: "uppercase", marginTop: 6 }}>Free Sample for Your Practice</p>
+          <p style={{ color: "rgba(255,255,255,.45)", fontSize: 13, letterSpacing: "2.5px", textTransform: "uppercase", marginTop: 6 }}>Free Sample — No Sales Call</p>
         </div>
 
         {done ? (
           <div style={{ background: "rgba(255,255,255,.04)", border: `1px solid ${B}33`, borderRadius: 20, padding: 40, textAlign: "center" }}>
             <div style={{ width: 72, height: 72, borderRadius: "50%", background: `linear-gradient(135deg,${GR},#00D2A0)`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px", fontSize: 32 }}>✓</div>
             <h2 style={{ fontSize: 24, marginBottom: 10 }}>Sample on the way!</h2>
-            <p style={{ color: "rgba(255,255,255,.6)", fontSize: 15, lineHeight: 1.6 }}>Darrin will personally get a free sample in the mail to you this week. Try it on yourself and a few patients — no sales call, no catch.</p>
+            <p style={{ color: "rgba(255,255,255,.6)", fontSize: 15, lineHeight: 1.6 }}>The Active 10 Team will get a free sample in the mail to you this week. Try it on yourself and a few others — no sales call, no catch.</p>
             <p style={{ color: "rgba(255,255,255,.45)", fontSize: 13, marginTop: 18 }}>Questions? Email activeformulations@gmail.com</p>
           </div>
         ) : (
           <div style={{ background: "rgba(255,255,255,.04)", border: `1px solid ${B}33`, borderRadius: 20, padding: 32 }}>
             <p style={{ color: "rgba(255,255,255,.7)", fontSize: 15, lineHeight: 1.6, marginBottom: 22 }}>
-              Active 10 is a professional-grade topical pain-relief cream chiropractors use on patients and resell at the front desk. Drop your shipping address and we&apos;ll mail you a <strong style={{ color: "white" }}>free sample</strong> — try it before you decide anything.
+              Active 10 is a professional-grade topical recovery cream that practices and club pro shops stock and resell at the counter. Drop your shipping address and we&apos;ll mail you a <strong style={{ color: "white" }}>free sample</strong> — try it before you decide anything.
             </p>
             {err && <div style={{ background: "rgba(255,80,80,.1)", border: "1px solid rgba(255,80,80,.3)", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#FF6B6B" }}>{err}</div>}
             {fields.map((f) => (
@@ -99,9 +99,9 @@ export default function SamplePage() {
               </div>
             ))}
             <div style={{ marginBottom: 20 }}>
-              <label style={{ display: "block", color: "rgba(255,255,255,.5)", fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: ".8px" }}>Practice Type</label>
-              <select value={form.type} onChange={(e) => setForm((p) => ({ ...p, type: e.target.value }))} style={{ ...inp, color: "rgba(255,255,255,.8)" }}>
-                <option>Chiropractor</option><option>Physical Therapy</option><option>Massage Therapy</option><option>Medical Doctor</option><option>Other</option>
+              <label style={{ display: "block", color: "rgba(255,255,255,.5)", fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: ".8px" }}>Business Type</label>
+              <select value={form.type} onChange={(e) => setForm((p) => ({ ...p, type: e.target.value }))} style={{ ...inp, color: "white", background: "#0a2436" }}>
+                {["Pro Shop", "Chiropractor", "Physical Therapy", "Massage Therapy", "Medical Doctor", "Other"].map((o) => <option key={o} value={o} style={{ color: "white", background: "#0a2436" }}>{o}</option>)}
               </select>
             </div>
             {TURNSTILE_SITE_KEY && <div id="cf-turnstile-sample" style={{ marginBottom: 16, minHeight: 65 }} />}
