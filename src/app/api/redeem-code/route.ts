@@ -6,19 +6,23 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// Single live promo code. 20% off + free shipping, one redemption per customer.
-const CODE = "DCAMEMBERSONLY";
-const CODE_DISCOUNT = 0.2;
+// Live promo codes. `expires` (if set) kills the code at that UTC instant;
+// `oncePerCustomer` is enforced via the order-marker check below.
+const PROMO_CODES: Record<string, { discount: number; freeShipping: boolean; expires?: string; oncePerCustomer: boolean }> = {
+  DCAMEMBERSONLY: { discount: 0.2, freeShipping: true, oncePerCustomer: true },
+  // 4th of July sale — usable on every order through July 13 (midnight Pacific).
+  FIREWORKS: { discount: 0.2, freeShipping: false, expires: "2026-07-14T07:00:00Z", oncePerCustomer: false },
+};
 
-// A customer has used the code if any prior order carries the marker. We write
+// A customer has used a code if any prior order carries the marker. We write
 // the code into both `tier_name` and `notes` at order time (no dedicated column
 // exists on the orders table), so we look in both places to be safe.
-async function hasUsedCode(customerId: string) {
+async function hasUsedCode(customerId: string, code: string) {
   const { data, error } = await supabaseAdmin
     .from("orders")
     .select("id")
     .eq("customer_id", customerId)
-    .or(`tier_name.ilike.%${CODE}%,notes.ilike.%${CODE}%`)
+    .or(`tier_name.ilike.%${code}%,notes.ilike.%${code}%`)
     .limit(1);
   if (error) throw new Error(error.message);
   return (data?.length || 0) > 0;
@@ -36,18 +40,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Enter a code." });
     }
 
-    // 1) The evergreen members promo (one redemption per customer).
-    if (entered === CODE) {
-      if (await hasUsedCode(customerId)) {
+    // 1) House promo codes (hardcoded above).
+    const promo = PROMO_CODES[entered];
+    if (promo) {
+      if (promo.expires && new Date(promo.expires) < new Date()) {
+        return NextResponse.json({ ok: false, error: "This code has expired." });
+      }
+      if (promo.oncePerCustomer && (await hasUsedCode(customerId, entered))) {
         return NextResponse.json({ ok: false, alreadyUsed: true, error: "This code has already been used on your account." });
       }
       return NextResponse.json({
         ok: true,
-        code: CODE,
+        code: entered,
         type: "promo",
-        discount: CODE_DISCOUNT,
-        freeShipping: true,
-        message: "Code applied! 20% off + free shipping.",
+        discount: promo.discount,
+        freeShipping: promo.freeShipping,
+        message: `Code applied! ${Math.round(promo.discount * 100)}% off${promo.freeShipping ? " + free shipping" : ""}.`,
       });
     }
 

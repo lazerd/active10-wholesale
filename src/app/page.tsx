@@ -135,6 +135,10 @@ export default function App() {
     let ref = p.get("ref") || "";
     try { if (!ref) ref = localStorage.getItem("a10_ref") || ""; else localStorage.setItem("a10_ref", ref); } catch {}
     if (ref) { setRefSlug(ref.toLowerCase()); setAuthView("apply"); if (p.get("ref")) window.history.replaceState({}, "", window.location.pathname); }
+    // Capture a promo code from email links (?code=FIREWORKS) — remembered until
+    // the customer is logged in, then auto-applied.
+    const promoParam = (p.get("code") || "").trim().toUpperCase();
+    if (promoParam) { try { localStorage.setItem("a10_pendingcode", promoParam); } catch {} setCodeInput(promoParam); window.history.replaceState({}, "", window.location.pathname); }
     // Capture a customer referral invite (?invite=code or remembered from /invite/<code>)
     let inv = p.get("invite") || "";
     try { if (!inv) inv = localStorage.getItem("a10_invite") || ""; else localStorage.setItem("a10_invite", inv); } catch {}
@@ -239,9 +243,9 @@ export default function App() {
 
   const submitApplication = async () => { if (TURNSTILE_SITE_KEY && !capToken) { alert("Please complete the verification challenge below."); return; } const r = { name: appForm.name, email: appForm.email, phone: appForm.phone, business: appForm.business, address: appForm.address, city: appForm.city, state: appForm.state, zip: appForm.zip, type: appForm.type, ...(refSlug ? { affiliate_slug: refSlug } : {}), ...(inviteCode ? { referred_by_code: inviteCode } : {}) }; try { const res = await fetch("/api/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...r, captchaToken: capToken }) }); const d = await res.json(); if (d.ok) { setAppSubmitted(true); fetch("/api/webhook", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "application", record: r }) }).catch(() => {}); } else { alert("Error: " + (d.error || "Could not submit application. Please try again.")); if (TURNSTILE_SITE_KEY) { try { (window as any).turnstile?.reset(); } catch {} setCapToken(""); } } } catch { alert("Could not submit application. Please check your connection and try again."); } };
 
-  const applyCode = async () => {
+  const applyCode = async (codeArg?: unknown) => {
     if (!customer || codeChecking) return;
-    const code = codeInput.trim();
+    const code = (typeof codeArg === "string" ? codeArg : codeInput).trim();
     if (!code) { setCodeMsg({ text: "Enter a code.", ok: false }); return; }
     setCodeChecking(true); setCodeMsg(null);
     try {
@@ -254,6 +258,14 @@ export default function App() {
     setCodeChecking(false);
   };
   const removeCode = () => { setAppliedCode(""); setAppliedPct(0); setAppliedFreeShip(false); setAppliedType(""); setAppliedSamples(0); setCodeInput(""); setCodeMsg(null); };
+  // Auto-apply a promo code that arrived via URL (?code=...) once the customer is loaded.
+  useEffect(() => {
+    if (!customer || appliedCode) return;
+    let pend = "";
+    try { pend = localStorage.getItem("a10_pendingcode") || ""; } catch {}
+    if (pend) { try { localStorage.removeItem("a10_pendingcode"); } catch {} setCodeInput(pend); applyCode(pend); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customer]);
 
   const submitOrder = async () => {
     if (!customer || orderSubmitting) return;
