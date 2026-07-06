@@ -148,15 +148,18 @@ export default function App() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s);
-      if (s) {
-        loadUserData(s);
-      } else if (event === "SIGNED_OUT") {
+      if (event === "SIGNED_OUT") {
         setLoading(false);
         setIsAdmin(false);
         setCustomer(null);
+      } else if (s && (event === "SIGNED_IN" || event === "USER_UPDATED")) {
+        loadUserData(s);
       }
-      // For any other event with a null session (e.g. failed OTP exchange),
-      // do nothing — preserve whatever session state we already have.
+      // Do NOT re-run loadUserData on TOKEN_REFRESHED (fires ~hourly) — it would
+      // flip the whole app back to the "Loading..." gate mid-session, and if that
+      // reload's queries hang the UI wedges. The session is already updated above.
+      // For a null session on any other event (e.g. failed OTP exchange), do
+      // nothing — preserve whatever session state we already have.
     });
 
     return () => subscription.unsubscribe();
@@ -212,7 +215,28 @@ export default function App() {
   useEffect(() => { if (view !== "cart") return; const ids = Object.entries(cart).filter(([, q]) => q > 0).map(([id]) => id); if (ids.length === 0) { setRecs([]); return; } let active = true; fetch("/api/recommendations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ productIds: ids }) }).then(r => r.json()).then(d => { if (active) setRecs((d.productIds || []).filter((id: string) => !ids.includes(id))); }).catch(() => {}); return () => { active = false; }; }, [view, cart]);
   useEffect(() => { const p = new URLSearchParams(window.location.search); if (p.get("qb_connected") === "true") { setQbConnected(true); setQbMessage({ text: "QuickBooks connected successfully!", ok: true }); window.history.replaceState({}, "", window.location.pathname); } if (p.get("qb_error")) { setQbMessage({ text: `QuickBooks connection failed: ${p.get("qb_error")}`, ok: false }); window.history.replaceState({}, "", window.location.pathname); } if (p.get("gmail_connected") || p.get("gmail_error")) { window.history.replaceState({}, "", window.location.pathname); } fetch("/api/qb/status").then(r => r.json()).then(d => setQbConnected(d.connected)).catch(() => {}); }, []);
 
-  const loadUserData = async (s: any) => { setLoading(true); const email = s.user.email; const { data: ad } = await supabase.from("admin_emails").select("email").eq("email", email).single(); setIsAdmin(!!ad); const { data: cd } = await supabase.from("customers").select("*").eq("email", email).single(); if (cd) setCustomer(cd as Customer); else setCustomer(null); if (!ad && !cd) { const { data: af } = await supabase.from("affiliates").select("id").limit(1); setIsAffiliate(!!(af && af.length)); } else setIsAffiliate(false); if (ad) await loadAdminData(); setLoading(false); };
+  const loadUserData = async (s: any) => {
+    setLoading(true);
+    // Never let a hung/rejected Supabase request pin the whole app on the
+    // "Loading..." screen: race every query against a timeout, and ALWAYS clear
+    // loading in finally so a network blip can't wedge the UI (was the cause of
+    // the 2026-07-06 "site frozen, everything just loading" incident).
+    const timeout = <T,>(p: PromiseLike<T>, ms = 12000): Promise<T | null> =>
+      Promise.race([Promise.resolve(p), new Promise<null>((r) => setTimeout(() => r(null), ms))]);
+    try {
+      const email = s.user.email;
+      const ad = (await timeout(supabase.from("admin_emails").select("email").eq("email", email).maybeSingle()))?.data;
+      setIsAdmin(!!ad);
+      const cd = (await timeout(supabase.from("customers").select("*").eq("email", email).maybeSingle()))?.data;
+      if (cd) setCustomer(cd as Customer); else setCustomer(null);
+      if (!ad && !cd) { const af = (await timeout(supabase.from("affiliates").select("id").limit(1)))?.data; setIsAffiliate(!!(af && af.length)); } else setIsAffiliate(false);
+      if (ad) await timeout(loadAdminData());
+    } catch (e) {
+      console.error("loadUserData error:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
   const loadAdminData = async () => { const [c, a, o] = await Promise.all([supabase.from("customers").select("*").order("total_spent", { ascending: false }), supabase.from("applications").select("*").order("created_at", { ascending: false }), supabase.from("orders").select("*").order("created_at", { ascending: false })]); if (c.data) setCustomers(c.data as Customer[]); if (a.data) setApplications(a.data as Application[]); if (o.data) setOrders(o.data as Order[]); };
 
   const items = Object.entries(cart).filter(([, q]) => q > 0);
@@ -292,8 +316,8 @@ export default function App() {
     else alert("Failed to submit order.");
   };
 
-  const approveApp = async (id: string) => { const r = await fetch("/api/approve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ applicationId: id, action: "approve" }) }); const d = await r.json(); if (d.ok) { setApplications(p => p.map(a => a.id === id ? { ...a, status: "approved" } : a)); loadAdminData(); } else alert("Error: " + (d.error || "Failed")); };
-  const rejectApp = async (id: string) => { const r = await fetch("/api/approve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ applicationId: id, action: "reject" }) }); const d = await r.json(); if (d.ok) setApplications(p => p.map(a => a.id === id ? { ...a, status: "rejected" } : a)); else alert("Error: " + (d.error || "Failed")); };
+  const approveApp = async (id: string) => { try { const r = await fetch("/api/approve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ applicationId: id, action: "approve" }) }); const d = await r.json().catch(() => ({})); if (r.ok && d.ok) { setApplications(p => p.map(a => a.id === id ? { ...a, status: "approved" } : a)); loadAdminData(); } else alert("Error approving: " + (d.error || `request failed (${r.status})`)); } catch (e: any) { alert("Network error approving — please try again. " + (e?.message || "")); } };
+  const rejectApp = async (id: string) => { try { const r = await fetch("/api/approve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ applicationId: id, action: "reject" }) }); const d = await r.json().catch(() => ({})); if (r.ok && d.ok) setApplications(p => p.map(a => a.id === id ? { ...a, status: "rejected" } : a)); else alert("Error rejecting: " + (d.error || `request failed (${r.status})`)); } catch (e: any) { alert("Network error rejecting — please try again. " + (e?.message || "")); } };
   const updateOrderStatus = async (id: string, st: string) => { await supabase.from("orders").update({ status: st }).eq("id", id); setOrders(p => p.map(o => o.id === id ? { ...o, status: st } : o)); if (["confirmed", "shipped", "delivered"].includes(st)) { const { data: s } = await supabase.auth.getSession(); const token = s.session?.access_token; if (token) fetch("/api/referral/qualify", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ orderId: id }) }).catch(() => {}); } };
 const syncCustomerToQB = async (cid: string) => { setQbLoading(`cust-${cid}`); setQbMessage(null); try { const r = await fetch("/api/qb/sync-customer", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ customerId: cid }) }); const d = await r.json(); if (d.success) { setQbMessage({ text: `✓ ${d.message}`, ok: true }); setCustomers(p => p.map(c => c.id === cid ? { ...c, qb_customer_id: d.qb_customer_id } : c)); if (selectedCustomer?.id === cid) setSelectedCustomer(p => p ? { ...p, qb_customer_id: d.qb_customer_id } : p); } else setQbMessage({ text: `Error: ${d.error}`, ok: false }); } catch { setQbMessage({ text: "Failed to connect to QuickBooks", ok: false }); } setQbLoading(null); };
 const deleteCustomer = async (c: Customer) => { if (!confirm(`Delete ${c.name}? This will remove them and their login. This cannot be undone.`)) return; try { const r = await fetch("/api/delete-customer", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ customerId: c.id, userId: c.user_id }) }); const d = await r.json(); if (d.ok) { setCustomers(p => p.filter(x => x.id !== c.id)); setSelectedCustomer(null); } else alert("Error: " + (d.error || "Failed to delete")); } catch { alert("Error deleting customer"); } };
