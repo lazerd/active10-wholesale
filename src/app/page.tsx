@@ -166,7 +166,10 @@ export default function App() {
   }, []);
   // ─────────────────────────────────────────────────────────────────────────
 
-  useEffect(() => { supabase.from("products").select("*").eq("active", true).order("sort_order").then(({ data }) => { if (data) setProducts(data as Product[]); }); }, []);
+  // Load the catalog from the edge-cached /api/products route (not a live
+  // Supabase query) so the shop grid paints fast and consistently even when the
+  // DB tier is throttled. Falls back to a direct query if the route ever errors.
+  useEffect(() => { fetch("/api/products").then(r => r.json()).then(d => { if (d.products?.length) setProducts(d.products as Product[]); else return supabase.from("products").select("*").eq("active", true).order("sort_order").then(({ data }) => { if (data) setProducts(data as Product[]); }); }).catch(() => { supabase.from("products").select("*").eq("active", true).order("sort_order").then(({ data }) => { if (data) setProducts(data as Product[]); }); }); }, []);
   // Render the Cloudflare Turnstile (CAPTCHA) widget on the application form. No-op until
   // NEXT_PUBLIC_TURNSTILE_SITE_KEY is set, so the form keeps working before keys are configured.
   useEffect(() => {
@@ -213,7 +216,10 @@ export default function App() {
   useEffect(() => { if (!customer || isAdmin || isAffiliate) { setCreditBalance({ available: 0, pending: 0 }); return; } let active = true; (async () => { const { data: s } = await supabase.auth.getSession(); const token = s.session?.access_token; if (!token) return; try { const r = await fetch("/api/credit/balance", { headers: { Authorization: `Bearer ${token}` } }); const d = await r.json(); if (active) setCreditBalance({ available: Number(d.available) || 0, pending: Number(d.pending) || 0 }); } catch {} })(); return () => { active = false; }; }, [customer, orderSuccess]);
   // Frequently-bought-together recommendations for the cart.
   useEffect(() => { if (view !== "cart") return; const ids = Object.entries(cart).filter(([, q]) => q > 0).map(([id]) => id); if (ids.length === 0) { setRecs([]); return; } let active = true; fetch("/api/recommendations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ productIds: ids }) }).then(r => r.json()).then(d => { if (active) setRecs((d.productIds || []).filter((id: string) => !ids.includes(id))); }).catch(() => {}); return () => { active = false; }; }, [view, cart]);
-  useEffect(() => { const p = new URLSearchParams(window.location.search); if (p.get("qb_connected") === "true") { setQbConnected(true); setQbMessage({ text: "QuickBooks connected successfully!", ok: true }); window.history.replaceState({}, "", window.location.pathname); } if (p.get("qb_error")) { setQbMessage({ text: `QuickBooks connection failed: ${p.get("qb_error")}`, ok: false }); window.history.replaceState({}, "", window.location.pathname); } if (p.get("gmail_connected") || p.get("gmail_error")) { window.history.replaceState({}, "", window.location.pathname); } fetch("/api/qb/status").then(r => r.json()).then(d => setQbConnected(d.connected)).catch(() => {}); }, []);
+  useEffect(() => { const p = new URLSearchParams(window.location.search); if (p.get("qb_connected") === "true") { setQbConnected(true); setQbMessage({ text: "QuickBooks connected successfully!", ok: true }); window.history.replaceState({}, "", window.location.pathname); } if (p.get("qb_error")) { setQbMessage({ text: `QuickBooks connection failed: ${p.get("qb_error")}`, ok: false }); window.history.replaceState({}, "", window.location.pathname); } if (p.get("gmail_connected") || p.get("gmail_error")) { window.history.replaceState({}, "", window.location.pathname); } }, []);
+  // QuickBooks status is only used in the admin view — don't make every doctor's
+  // browser pay for this request on load. Fire it only once we know they're admin.
+  useEffect(() => { if (!isAdmin) return; fetch("/api/qb/status").then(r => r.json()).then(d => setQbConnected(d.connected)).catch(() => {}); }, [isAdmin]);
 
   const loadUserData = async (s: any) => {
     setLoading(true);
@@ -225,9 +231,16 @@ export default function App() {
       Promise.race([Promise.resolve(p), new Promise<null>((r) => setTimeout(() => r(null), ms))]);
     try {
       const email = s.user.email;
-      const ad = (await timeout(supabase.from("admin_emails").select("email").eq("email", email).maybeSingle()))?.data;
+      // These two lookups are independent — run them together so the loading
+      // gate clears after one round-trip instead of two (halves time-to-shop
+      // on the throttled DB tier).
+      const [adRes, cdRes] = await Promise.all([
+        timeout(supabase.from("admin_emails").select("email").eq("email", email).maybeSingle()),
+        timeout(supabase.from("customers").select("*").eq("email", email).maybeSingle()),
+      ]);
+      const ad = adRes?.data;
+      const cd = cdRes?.data;
       setIsAdmin(!!ad);
-      const cd = (await timeout(supabase.from("customers").select("*").eq("email", email).maybeSingle()))?.data;
       if (cd) setCustomer(cd as Customer); else setCustomer(null);
       if (!ad && !cd) { const af = (await timeout(supabase.from("affiliates").select("id").limit(1)))?.data; setIsAffiliate(!!(af && af.length)); } else setIsAffiliate(false);
       if (ad) await timeout(loadAdminData());
