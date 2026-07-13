@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { balances } from "@/lib/credit";
 
+// Required: the catch below swallows Next's dynamic-usage marker, so without
+// this the route gets prerendered at build time as a permanent $0 response.
+export const dynamic = "force-dynamic";
+
 const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
 export async function GET(req: NextRequest) {

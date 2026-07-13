@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 
+// Required: a static prerender would bake one state UUID into every redirect.
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const clientId = process.env.QB_CLIENT_ID!;
   const redirectUri = process.env.QB_REDIRECT_URI!;

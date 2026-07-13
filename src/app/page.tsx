@@ -1,15 +1,19 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
+import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
-import AffiliateDashboard from "@/components/AffiliateDashboard";
-import AdminAffiliates from "@/components/AdminAffiliates";
-import AdminWinback from "@/components/AdminWinback";
-import AdminRestock from "@/components/AdminRestock";
-import AdminAbandoned from "@/components/AdminAbandoned";
-import AdminReferrals from "@/components/AdminReferrals";
-import CustomerReferral from "@/components/CustomerReferral";
-import AdminOutreach from "@/components/AdminOutreach";
-import AdminSamples from "@/components/AdminSamples";
+
+// Lazy-load the admin/affiliate dashboards so storefront customers don't
+// download them (they were ~half the page bundle, incl. the QR-code library).
+const AffiliateDashboard = dynamic(() => import("@/components/AffiliateDashboard"), { ssr: false });
+const AdminAffiliates = dynamic(() => import("@/components/AdminAffiliates"), { ssr: false });
+const AdminWinback = dynamic(() => import("@/components/AdminWinback"), { ssr: false });
+const AdminRestock = dynamic(() => import("@/components/AdminRestock"), { ssr: false });
+const AdminAbandoned = dynamic(() => import("@/components/AdminAbandoned"), { ssr: false });
+const AdminReferrals = dynamic(() => import("@/components/AdminReferrals"), { ssr: false });
+const CustomerReferral = dynamic(() => import("@/components/CustomerReferral"), { ssr: false });
+const AdminOutreach = dynamic(() => import("@/components/AdminOutreach"), { ssr: false });
+const AdminSamples = dynamic(() => import("@/components/AdminSamples"), { ssr: false });
 
 const B = "#0072BC", BL = "#0088DD", BD = "#005A96", BBG = "#003A5C", BDP = "#00253D", GR = "#00B894";
 const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "";
@@ -119,6 +123,10 @@ export default function App() {
   const [editCustLoading, setEditCustLoading] = useState(false);
   const [editCustError, setEditCustError] = useState("");
   const [resetPwLoading, setResetPwLoading] = useState<string | null>(null);
+  // Which auth user's role/profile is currently loaded (or loading), and a
+  // sequence counter so out-of-order loads can't clobber newer state.
+  const loadedUserId = useRef<string | null>(null);
+  const loadSeq = useRef(0);
 
   // ── AUTH ─────────────────────────────────────────────────────────────────
   // FIX: Strip any Supabase error params (e.g. otp_expired) from the URL
@@ -151,16 +159,29 @@ export default function App() {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
-      setSession(s);
-      if (s) {
-        loadUserData(s);
-      } else if (event === "SIGNED_OUT") {
-        setLoading(false);
-        setIsAdmin(false);
-        setCustomer(null);
-      }
-      // For any other event with a null session (e.g. failed OTP exchange),
-      // do nothing — preserve whatever session state we already have.
+      // Defer ALL work out of this callback: supabase-js holds its auth lock
+      // while notifying subscribers, and any query awaited in here can
+      // deadlock the whole tab (the notorious freeze-on-tab-refocus bug).
+      setTimeout(() => {
+        if (event === "SIGNED_OUT") {
+          loadedUserId.current = null;
+          setSession(null);
+          setLoading(false);
+          setIsAdmin(false);
+          setIsAffiliate(false);
+          setCustomer(null);
+          return;
+        }
+        // For any other event with a null session (e.g. failed OTP exchange),
+        // do nothing — preserve whatever session state we already have.
+        if (!s) return;
+        setSession(s);
+        // Only reload role/profile when the signed-in user actually changed.
+        // TOKEN_REFRESHED and tab-refocus events used to re-run the full load
+        // (wiping the UI back to the loading screen and re-downloading every
+        // admin table) and could race an earlier load into the wrong view.
+        if (s.user.id !== loadedUserId.current) loadUserData(s);
+      }, 0);
     });
 
     return () => subscription.unsubscribe();
@@ -216,7 +237,45 @@ export default function App() {
   useEffect(() => { if (view !== "cart") return; const ids = Object.entries(cart).filter(([, q]) => q > 0).map(([id]) => id); if (ids.length === 0) { setRecs([]); return; } let active = true; fetch("/api/recommendations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ productIds: ids }) }).then(r => r.json()).then(d => { if (active) setRecs((d.productIds || []).filter((id: string) => !ids.includes(id))); }).catch(() => {}); return () => { active = false; }; }, [view, cart]);
   useEffect(() => { const p = new URLSearchParams(window.location.search); if (p.get("qb_connected") === "true") { setQbConnected(true); setQbMessage({ text: "QuickBooks connected successfully!", ok: true }); window.history.replaceState({}, "", window.location.pathname); } if (p.get("qb_error")) { setQbMessage({ text: `QuickBooks connection failed: ${p.get("qb_error")}`, ok: false }); window.history.replaceState({}, "", window.location.pathname); } if (p.get("gmail_connected") || p.get("gmail_error")) { window.history.replaceState({}, "", window.location.pathname); } fetch("/api/qb/status").then(r => r.json()).then(d => setQbConnected(d.connected)).catch(() => {}); }, []);
 
-  const loadUserData = async (s: any) => { setLoading(true); const email = s.user.email; const { data: ad } = await supabase.from("admin_emails").select("email").eq("email", email).single(); setIsAdmin(!!ad); const { data: cd } = await supabase.from("customers").select("*").eq("email", email).single(); if (cd) setCustomer(cd as Customer); else setCustomer(null); if (!ad && !cd) { const { data: af } = await supabase.from("affiliates").select("id").limit(1); setIsAffiliate(!!(af && af.length)); } else setIsAffiliate(false); if (ad) await loadAdminData(); setLoading(false); };
+  const loadUserData = async (s: any) => {
+    // Claim this user immediately so duplicate auth events don't start a
+    // second concurrent load; bump the sequence so any older in-flight load
+    // becomes a no-op instead of overwriting fresh state with stale results.
+    const seq = ++loadSeq.current;
+    loadedUserId.current = s.user.id;
+    setLoading(true);
+    const email = s.user.email;
+    const adminQ = () => supabase.from("admin_emails").select("email").eq("email", email).maybeSingle();
+    try {
+      let [adRes, cdRes] = await Promise.all([
+        adminQ(),
+        supabase.from("customers").select("*").eq("email", email).maybeSingle(),
+      ]);
+      if (seq !== loadSeq.current) return;
+      // A transient error on the admin lookup used to silently demote the
+      // admin to the storefront. Retry once; if it still fails, keep whatever
+      // role we already had rather than guessing wrong.
+      if (adRes.error) {
+        adRes = await adminQ();
+        if (seq !== loadSeq.current) return;
+        if (adRes.error) { loadedUserId.current = null; setLoading(false); return; }
+      }
+      const ad = adRes.data;
+      const cd = cdRes.error ? null : cdRes.data;
+      setIsAdmin(!!ad);
+      setCustomer(cd ? (cd as Customer) : null);
+      if (!ad && !cd) {
+        const { data: af } = await supabase.from("affiliates").select("id").limit(1);
+        if (seq !== loadSeq.current) return;
+        setIsAffiliate(!!(af && af.length));
+      } else setIsAffiliate(false);
+      if (ad) await loadAdminData();
+    } catch {
+      if (seq === loadSeq.current) loadedUserId.current = null;
+    } finally {
+      if (seq === loadSeq.current) setLoading(false);
+    }
+  };
   const loadAdminData = async () => { const [c, a, o] = await Promise.all([supabase.from("customers").select("*").order("total_spent", { ascending: false }), supabase.from("applications").select("*").order("created_at", { ascending: false }), supabase.from("orders").select("*").order("created_at", { ascending: false })]); if (c.data) setCustomers(c.data as Customer[]); if (a.data) setApplications(a.data as Application[]); if (o.data) setOrders(o.data as Order[]); };
 
   const items = Object.entries(cart).filter(([, q]) => q > 0);

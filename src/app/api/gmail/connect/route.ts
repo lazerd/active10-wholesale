@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { GMAIL_REDIRECT, GMAIL_SCOPES } from "@/lib/gmail";
 
+// Required: a static prerender would bake one state UUID into every redirect.
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   if (!clientId) return NextResponse.redirect("https://wholesale.getactive10.com?gmail_error=not_configured");

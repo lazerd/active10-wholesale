@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
+// Required: otherwise the connection status is snapshotted at build time and
+// never reflects connects/disconnects until the next deploy.
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
