@@ -10,8 +10,9 @@ const supabaseAdmin = createClient(
 // `oncePerCustomer` is enforced via the order-marker check below.
 const PROMO_CODES: Record<string, { discount: number; freeShipping: boolean; expires?: string; oncePerCustomer: boolean }> = {
   DCAMEMBERSONLY: { discount: 0.2, freeShipping: true, oncePerCustomer: true },
-  // 4th of July sale — usable on every order through July 13 (midnight Pacific).
-  FIREWORKS: { discount: 0.2, freeShipping: false, expires: "2026-07-14T07:00:00Z", oncePerCustomer: false },
+  // 4th of July sale — advertised through July 13; grace-extended through
+  // July 15 (midnight Pacific) for doctors who tried to order after it lapsed.
+  FIREWORKS: { discount: 0.2, freeShipping: false, expires: "2026-07-16T07:00:00Z", oncePerCustomer: false },
 };
 
 // A customer has used a code if any prior order carries the marker. We write
