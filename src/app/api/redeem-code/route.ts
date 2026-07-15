@@ -11,8 +11,9 @@ const supabaseAdmin = createClient(
 const PROMO_CODES: Record<string, { discount: number; freeShipping: boolean; expires?: string; oncePerCustomer: boolean }> = {
   DCAMEMBERSONLY: { discount: 0.2, freeShipping: true, oncePerCustomer: true },
   // 4th of July sale — advertised through July 13; grace-extended through
-  // July 15 (midnight Pacific) for doctors who tried to order after it lapsed.
-  FIREWORKS: { discount: 0.2, freeShipping: false, expires: "2026-07-16T07:00:00Z", oncePerCustomer: false },
+  // Friday July 17 (midnight Pacific) after the July 14-15 portal outage
+  // blocked customers mid-order.
+  FIREWORKS: { discount: 0.2, freeShipping: false, expires: "2026-07-18T07:00:00Z", oncePerCustomer: false },
 };
 
 // A customer has used a code if any prior order carries the marker. We write
