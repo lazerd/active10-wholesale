@@ -8,6 +8,18 @@ const supabaseAdmin = createClient(
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
 
+// Resetting another user's password is an admin-only action: without this the
+// route would mint a new password for any customer id an anonymous caller sent.
+async function isAdmin(req: NextRequest): Promise<boolean> {
+  const token = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
+  if (!token) return false;
+  const { data } = await supabaseAdmin.auth.getUser(token);
+  const email = data?.user?.email?.toLowerCase();
+  if (!email) return false;
+  const { data: ad } = await supabaseAdmin.from("admin_emails").select("email").ilike("email", email).single();
+  return !!ad;
+}
+
 async function sendEmail(to: string, subject: string, html: string) {
   return fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -26,6 +38,10 @@ async function sendEmail(to: string, subject: string, html: string) {
 
 export async function POST(req: NextRequest) {
   try {
+    if (!(await isAdmin(req))) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 403 });
+    }
+
     const { customerId } = await req.json();
     if (!customerId) {
       return NextResponse.json({ ok: false, error: "Missing customerId" }, { status: 400 });
