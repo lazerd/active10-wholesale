@@ -14,7 +14,7 @@ export function founderLetter(p: Prospect): Pitch {
   if ((p.type || "") === "club") {
     return {
       subject: "fellow dca member + your pro shop",
-      body: `Hi ${first},\n\nI'm Darrin Cohen, a fellow member of the Directors Club of America. My cofounder June Munroe and I make Active 10, a topical recovery cream players reach for after a tough match. Made in the USA, hemp-derived, THC-free.\n\nJarrett Chirico keeps it in his pro shop at North Hills (and carried it at his last club too), and both times it's been one of his best sellers at the counter. Players try it, feel the difference, and come back for more.\n\nI'd rather you judge it than take my word for it, so let me just send you a free sample — try it after your own match and put a few on the counter. No cost, no sales call.\n\nIf it earns a spot, the first order's easy: our DCA intro kit is 3 CBD tubes + 3 CBD roll-ons + 10 sample packets for $99 shipped — about $120 at normal wholesale, and $240 of retail on your counter.\n\nJust reply with where to ship it — or grab one here: wholesale.getactive10.com/sample. Either way I'll get it out this week. Thanks, ${first}.\n\nDarrin & June\nActive 10\n800-636-4130`,
+      body: `Hi ${first},\n\nI'm Darrin Cohen, a fellow member of the Directors Club of America. My cofounder June Munroe and I make Active 10, a topical recovery cream players reach for after a tough match. Made in the USA, THC-free.\n\nJarrett Chirico keeps it in his pro shop at North Hills (and carried it at his last club too), and both times it's been one of his best sellers at the counter. Players try it, feel the difference, and come back for more.\n\nI'd rather you judge it than take my word for it, so let me just send you a free sample — try it after your own match and put a few on the counter. No cost, no sales call.\n\nIf it earns a spot, the first order's easy: our DCA intro kit is 3 PLUS tubes + 3 PLUS roll-ons + 10 sample packets for $99 shipped — about $120 at normal wholesale, and $240 of retail on your counter.\n\nJust reply with where to ship it — or grab one here: wholesale.getactive10.com/sample. Either way I'll get it out this week. Thanks, ${first}.\n\nDarrin & June\nActive 10\n800-636-4130`,
     };
   }
   return {
@@ -71,7 +71,7 @@ export function clubTemplatePitch(p: Prospect, angle: string): Pitch {
     proshop_intro: founderLetter(p),
     margin: {
       subject: `a counter product for the ${b} pro shop`,
-      body: `Hi ${first},\n\nCircling back, one DCA director to another. Active 10 is a topical recovery cream (made in the USA, hemp-derived, THC-free) that players buy right at the pro-shop counter after a match. Wholesale runs about 50% off retail, so it's real margin on a small footprint.\n\nJarrett Chirico has it in his shop at North Hills and it's been one of his best sellers. Want me to send a free sample so you can see for yourself?\n\nDarrin & June\nActive 10\n${SITE}`,
+      body: `Hi ${first},\n\nCircling back, one DCA director to another. Active 10 is a topical recovery cream (made in the USA, THC-free) that players buy right at the pro-shop counter after a match. Wholesale runs about 50% off retail, so it's real margin on a small footprint.\n\nJarrett Chirico has it in his shop at North Hills and it's been one of his best sellers. Want me to send a free sample so you can see for yourself?\n\nDarrin & June\nActive 10\n${SITE}`,
     },
     player_demand: {
       subject: `what your players use after a match`,
@@ -79,7 +79,7 @@ export function clubTemplatePitch(p: Prospect, angle: string): Pitch {
     },
     trial: {
       subject: `the dca intro kit for ${b}`,
-      body: `Hi ${first},\n\nCircling back with an easy first step: our DCA intro kit — 3 Active 10 PLUS CBD tubes, 3 CBD roll-ons, and 10 sample packets for $99 shipped. That's about $120 at normal wholesale and roughly $240 of retail on your counter, so it pays for itself fast with no minimum to commit to.\n\nWant me to send the kit out — or a free sample first?\n\nDarrin & June\nActive 10\n${SITE}`,
+      body: `Hi ${first},\n\nCircling back with an easy first step: our DCA intro kit — 3 Active 10 PLUS tubes, 3 PLUS roll-ons, and 10 sample packets for $99 shipped. That's about $120 at normal wholesale and roughly $240 of retail on your counter, so it pays for itself fast with no minimum to commit to.\n\nWant me to send the kit out — or a free sample first?\n\nDarrin & June\nActive 10\n${SITE}`,
     },
   };
   return T[angle] || T.margin;
@@ -93,15 +93,15 @@ export function templatePitch(p: Prospect, angle: string): Pitch {
     founder_intro: founderLetter(p),
     margin: {
       subject: `Wholesale pricing for ${b}`,
-      body: `Hi ${first},\n\nI'm with Active 10 — we make professional-grade CBD and topical pain-relief products used in chiropractic and physical-therapy practices.\n\nMany practices like ${b} stock our line and resell to patients: our wholesale pricing is 50% off retail, so it becomes a nice additional revenue stream while genuinely helping patients between visits.\n\nWould it be worth a quick look? I can set you up with an account and an intro offer.\n\nBest,\nDarrin Cohen\nActive Formulations\n${SITE}`,
+      body: `Hi ${first},\n\nI'm with Active 10 — we make professional-grade topical pain-relief products used in chiropractic and physical-therapy practices.\n\nMany practices like ${b} stock our line and resell to patients: our wholesale pricing is 50% off retail, so it becomes a nice additional revenue stream while genuinely helping patients between visits.\n\nWould it be worth a quick look? I can set you up with an account and an intro offer.\n\nBest,\nDarrin Cohen\nActive Formulations\n${SITE}`,
     },
     pull_through: {
       subject: `Free samples for ${b}'s patients`,
-      body: `Hi ${first},\n\nQuick idea for ${b}: we send chiropractic practices free Active 10 sample packets to hand out to patients. Patients try our CBD/topical relief at home, come back asking where to buy it, and you keep them stocked at a wholesale margin.\n\nIt's a simple way to add patient value (and revenue) with zero upfront cost. Want me to send a sample pack your way?\n\nBest,\nDarrin Cohen\nActive Formulations\n${SITE}`,
+      body: `Hi ${first},\n\nQuick idea for ${b}: we send chiropractic practices free Active 10 sample packets to hand out to patients. Patients try our topical relief at home, come back asking where to buy it, and you keep them stocked at a wholesale margin.\n\nIt's a simple way to add patient value (and revenue) with zero upfront cost. Want me to send a sample pack your way?\n\nBest,\nDarrin Cohen\nActive Formulations\n${SITE}`,
     },
     clinical: {
       subject: `Professional-grade pain relief for your patients`,
-      body: `Hi ${first},\n\nI wanted to introduce Active 10 — professional-grade topical pain relief and full-spectrum CBD formulated for the kind of musculoskeletal issues you treat every day at ${b}.\n\nPractitioners use it as a take-home complement to in-office care. I'd love to send you details and our wholesale pricing for practices.\n\nWould that be helpful?\n\nBest,\nDarrin Cohen\nActive Formulations\n${SITE}`,
+      body: `Hi ${first},\n\nI wanted to introduce Active 10 — professional-grade topical pain relief formulated for the kind of musculoskeletal issues you treat every day at ${b}.\n\nPractitioners use it as a take-home complement to in-office care. I'd love to send you details and our wholesale pricing for practices.\n\nWould that be helpful?\n\nBest,\nDarrin Cohen\nActive Formulations\n${SITE}`,
     },
     trial: {
       subject: `A low-risk way to try Active 10 at ${b}`,
@@ -109,7 +109,7 @@ export function templatePitch(p: Prospect, angle: string): Pitch {
     },
     commission: {
       subject: `Partner with Active 10 — earn on every practice you refer`,
-      body: `Hi ${first},\n\nI'm with Active 10 (professional-grade CBD & topical pain relief for healthcare practices). We're growing our partner program and you came to mind.\n\nYou'd get a personal referral link and earn commission on every order from the practices you refer — tracked automatically in your own dashboard. It's a clean, passive way to earn from a product practices genuinely value.\n\nWould you be open to hearing more?\n\nBest,\nDarrin Cohen\nActive Formulations\n${SITE}`,
+      body: `Hi ${first},\n\nI'm with Active 10 (professional-grade topical pain relief for healthcare practices). We're growing our partner program and you came to mind.\n\nYou'd get a personal referral link and earn commission on every order from the practices you refer — tracked automatically in your own dashboard. It's a clean, passive way to earn from a product practices genuinely value.\n\nWould you be open to hearing more?\n\nBest,\nDarrin Cohen\nActive Formulations\n${SITE}`,
     },
     passive: {
       subject: `A simple passive-income partnership`,
@@ -117,7 +117,7 @@ export function templatePitch(p: Prospect, angle: string): Pitch {
     },
     audience: {
       subject: `Monetize your audience with Active 10`,
-      body: `Hi ${first},\n\nYour audience is exactly the kind of health-focused community that loves Active 10's CBD and pain-relief line. Our affiliate program lets you earn commission on every customer you send our way, with a personal link and real-time tracking.\n\nHappy to set you up so you can see how it works — interested?\n\nBest,\nDarrin Cohen\nActive Formulations\n${SITE}`,
+      body: `Hi ${first},\n\nYour audience is exactly the kind of health-focused community that loves Active 10's PLUS and pain-relief line. Our affiliate program lets you earn commission on every customer you send our way, with a personal link and real-time tracking.\n\nHappy to set you up so you can see how it works — interested?\n\nBest,\nDarrin Cohen\nActive Formulations\n${SITE}`,
     },
   };
   return T[angle] || T.margin;
@@ -138,7 +138,7 @@ async function geminiPitch(p: Prospect, angle: string, opts: PitchOpts = {}): Pr
   const angleHint: Record<string, string> = {
     margin: "they can stock our products and resell to patients at a ~50%-off-retail wholesale margin (extra revenue + helps patients between visits)",
     pull_through: "we give free patient sample packets that create take-home demand, so patients come back asking to buy and the practice reorders",
-    clinical: "professional-grade topical pain relief / full-spectrum CBD for the exact musculoskeletal issues they treat — a take-home complement to in-office care",
+    clinical: "professional-grade topical pain relief for the exact musculoskeletal issues they treat — a take-home complement to in-office care",
     trial: "a genuinely low-risk first order: welcome discount, free shipping, free samples, no real commitment",
     commission: "they earn commission on every practice they refer through a personal tracked link",
     passive: "passive income with automatic tracking and transparent payouts — nothing to chase",
@@ -154,7 +154,7 @@ async function geminiPitch(p: Prospect, angle: string, opts: PitchOpts = {}): Pr
   const lengthRule = opts.length === "medium" ? "4–6 short sentences, under 110 words" : opts.length === "tiny" ? "2–3 sentences, under 45 words" : "3–4 short sentences, under 75 words";
   const research = (p.research || "").trim();
 
-  const hcPrompt = `You're Darrin Cohen, founder of Active 10 (professional-grade CBD & topical pain-relief products for healthcare practices — wholesale.getactive10.com). Write ONE cold outreach email that actually gets a reply.
+  const hcPrompt = `You're Darrin Cohen, founder of Active 10 (professional-grade topical pain-relief products for healthcare practices — wholesale.getactive10.com). Write ONE cold outreach email that actually gets a reply.
 
 Recipient: ${p.name || "the practice owner"} at "${p.business || "a " + (p.type || "chiropractic") + " practice"}"${p.city ? ` in ${p.city}` : ""}.
 The hook: ${angleHint[angle] || angleHint.margin}.
@@ -183,13 +183,13 @@ BANNED (never use): "I hope this email finds you well", "I hope you're doing wel
 ${opts.instructions ? `\nExtra direction from Darrin (follow this): ${opts.instructions}\n` : ""}
 Return ONLY valid JSON: {"subject":"...","body":"..."} with \\n for line breaks in the body.`;
 
-  const clubPrompt = `You're Darrin Cohen, a member of the Directors Club of America (DCA). You and your cofounder June Munroe make Active 10, a topical recovery cream (made in the USA, hemp-derived, THC-free) that racquet players use after a match. You sell it wholesale to private-club PRO SHOPS to stock at the counter. Write ONE cold outreach email to a fellow DCA member (a club's racquets director / GM) that actually gets a reply.
+  const clubPrompt = `You're Darrin Cohen, a member of the Directors Club of America (DCA). You and your cofounder June Munroe make Active 10, a topical recovery cream (made in the USA, THC-free) that racquet players use after a match. You sell it wholesale to private-club PRO SHOPS to stock at the counter. Write ONE cold outreach email to a fellow DCA member (a club's racquets director / GM) that actually gets a reply.
 
 Recipient: ${p.name || "the racquets director"} at "${p.business || "a private club"}"${p.city ? ` in ${p.city}` : ""} — a fellow DCA member.
 Lead with the shared DCA membership as the natural reason you're reaching out — one director to another, not a cold stranger. Never say you run a tennis program anywhere.
 The hook: ${clubAngleHint[angle] || clubAngleHint.margin}.
 Proof you can reference (true): Jarrett Chirico (fellow DCA member, Dir. of Racquets at North Hills Club) carries Active 10 in his pro shop and it's been one of his best sellers.
-Intro offer you may mention (only if it fits naturally): the "DCA intro kit" — 3 Active 10 PLUS CBD tubes + 3 CBD roll-ons + 10 sample packets for $99 shipped (about $120 at normal wholesale, and $240 of retail on their counter). Do NOT invent other prices.
+Intro offer you may mention (only if it fits naturally): the "DCA intro kit" — 3 Active 10 PLUS tubes + 3 PLUS roll-ons + 10 sample packets for $99 shipped (about $120 at normal wholesale, and $240 of retail on their counter). Do NOT invent other prices.
 Self-serve sample link they can use instead of replying: wholesale.getactive10.com/sample.
 ${research ? `\nWhat their club's website says (USE THIS — open with one specific, true detail from it, stated casually, never flattery):\n"""${research.slice(0, 1200)}"""\n` : ""}
 Two examples of the QUALITY BAR — match their feel and specificity (do NOT copy the content):
@@ -299,7 +299,7 @@ async function geminiLinkedIn(p: Prospect, angle: string, opts: PitchOpts = {}):
   const tone = TONES[opts.tone || "human"] || TONES.human;
   const research = (p.research || "").trim();
 
-  const prompt = `You're Darrin Cohen, founder of Active 10 (professional-grade topical pain-relief / CBD for healthcare practices — ${SITE}). Write a LinkedIn outreach pair to a ${p.type || "chiropractic"} practice owner.
+  const prompt = `You're Darrin Cohen, founder of Active 10 (professional-grade topical pain relief for healthcare practices — ${SITE}). Write a LinkedIn outreach pair to a ${p.type || "chiropractic"} practice owner.
 
 Recipient: ${p.name || "the practice owner"}${p.business ? ` at "${p.business}"` : ""}${p.city ? ` in ${p.city}` : ""}.
 The hook: ${angleHint[angle] || angleHint.margin}.

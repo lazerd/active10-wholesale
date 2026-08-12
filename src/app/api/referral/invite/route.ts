@@ -25,7 +25,7 @@ function inviteEmail(referrerName: string, referrerBusiness: string, link: strin
         <div style="text-align:center;margin:24px 0;">
           <a href="${link}" style="background:#0072BC;color:#fff;padding:14px 36px;border-radius:8px;text-decoration:none;font-weight:700;display:inline-block;font-size:15px;">Claim Your Welcome Offer</a>
         </div>
-        <p style="color:#888;font-size:12px;margin-top:24px;line-height:1.6;">Active 10 makes professional-grade CBD &amp; topical pain-relief products for healthcare practices. Questions? <a href="mailto:activeformulations@gmail.com" style="color:#0072BC;">activeformulations@gmail.com</a></p>
+        <p style="color:#888;font-size:12px;margin-top:24px;line-height:1.6;">Active 10 makes professional-grade topical pain-relief products for healthcare practices. Questions? <a href="mailto:activeformulations@gmail.com" style="color:#0072BC;">activeformulations@gmail.com</a></p>
       </div>
       <div style="background:#f4f7fc;padding:16px 32px;text-align:center;border-top:1px solid #e8f0fe;"><p style="margin:0;font-size:11px;color:#aaa;">Active Formulations Inc. · wholesale.getactive10.com</p></div>
     </div>
