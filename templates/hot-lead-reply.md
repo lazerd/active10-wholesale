@@ -25,13 +25,13 @@ Great to hear from you — yes, everything is in stock and ready to ship.
 Your wholesale account is already active, so you can log in and order any time:
 https://wholesale.getactive10.com
 
-Wholesale is 50% off retail. The CBD (PLUS) line:
+Wholesale is 50% off retail. The PLUS line:
 
   Active 10 PLUS Tube, 3oz      $19.98   (retail $39.95)
   Active 10 PLUS Roll-On, 3oz   $19.98   (retail $39.95)
   Active 10 PLUS Pump, 8oz      $34.98   (retail $69.95)
 
-And the Original (non-CBD) line, if you want it on the shelf alongside:
+And the Original line, if you want it on the shelf alongside:
 
   Original Tube, 4oz            $14.98   (retail $29.95)
   Original Pump, 8oz            $17.98   (retail $35.95)
@@ -41,7 +41,7 @@ Volume discounts stack on top of that automatically at checkout:
 $150+ takes another 10% off, $300+ 15%, $1,000+ 20%. Minimum order is $50.
 
 Since this would be your first order, there's also an intro kit at $99
-shipped — 3 PLUS CBD tubes, 3 CBD roll-ons, and 10 sample packets
+shipped — 3 PLUS tubes, 3 PLUS roll-ons, and 10 sample packets
 (about $198 at retail). It shows up on your portal home page.
 
 If it's easier, tell me what you'd like and quantities and I'll put the
@@ -60,7 +60,7 @@ Active Formulations Inc.
 | Product | Retail | Wholesale |
 | --- | --- | --- |
 | Night Time Sleep Aid (drops) | $29.95 | $14.98 |
-| CBD Turmeric & Boswellia, 30 caps | $39.95 | $19.98 |
+| PLUS Turmeric & Boswellia, 30 caps | $39.95 | $19.98 |
 | DCA Intro Kit (first order only) | $198 | $99 |
 
 ## Tiers
@@ -76,6 +76,8 @@ Payment fees at checkout: card 2.99%, ACH 1%, check 0%. Minimum order $50.
 
 ## Notes
 
-- The PLUS line is CBD, full-spectrum, **THC-free** — that question comes up a lot.
+- **Never write "CBD" or "Hemp"** — dropped from all product copy 2026-08-12 (commit 3fb07d2).
+  The line is **PLUS**. If a prospect uses the word CBD themselves, answer them without
+  repeating it; "PLUS formula, THC-free" is the phrasing.
 - Don't make medical claims. "Professional-grade topical pain relief" is the ceiling.
 - First used 2026-08-14 replying to Dr Gerald Butrimovitz (moneydoctor@gmail.com).
