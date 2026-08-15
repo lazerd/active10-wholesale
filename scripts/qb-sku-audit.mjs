@@ -102,10 +102,46 @@ const resolve = (sku) => {
 const byId = Object.fromEntries(items.map((i) => [i.Id, i]));
 const products = await sb("products?select=id,name,qb_sku,active&order=sort_order");
 
+// Must mirror BUNDLES in src/app/api/qb/create-invoice/route.ts
+const BUNDLES = {
+  "dca-intro-kit": [
+    { sku: "030", qty: 3, label: "Active 10 PLUS Tube", weight: 19.98 },
+    { sku: "032", qty: 3, label: "Active 10 PLUS Roll-On", weight: 19.98 },
+    { sku: "011a", qty: 10, label: "Active 10 PLUS Sample Packet", weight: 0.65 },
+  ],
+};
+const round2 = (n) => Math.round(n * 100) / 100;
+const expand = (productId, name, qty, unitPrice) => {
+  const lineTotal = round2(qty * round2(unitPrice));
+  const b = BUNDLES[productId];
+  if (!b) return null;
+  const tw = b.reduce((s, c) => s + c.qty * c.weight, 0);
+  let allocated = 0;
+  return b.map((c, i) => {
+    const amount = i === b.length - 1 ? round2(lineTotal - allocated) : round2((lineTotal * (c.qty * c.weight)) / tw);
+    allocated = round2(allocated + amount);
+    return { sku: c.sku, description: `${name} — ${c.label}`, qty: c.qty * qty, amount };
+  });
+};
+
 console.log("PRODUCT                     SKU    →  QUICKBOOKS ITEM                    TYPE          QTY   VERDICT");
 console.log("─".repeat(118));
 const problems = [];
 for (const p of products) {
+  if (BUNDLES[p.id]) {
+    const comps = BUNDLES[p.id];
+    const bad = comps.filter((c) => !resolve(c.sku).hit);
+    console.log(
+      `${p.name}`.padEnd(28) + `KIT    →  expands into ${comps.length} component lines`.padEnd(50) +
+      (bad.length ? `❌ missing QB item: ${bad.map((c) => c.sku).join(", ")}` : "OK — all components inventory-tracked")
+    );
+    for (const c of comps) {
+      const ci = resolve(c.sku).hit ? byId[resolve(c.sku).hit.ref.Id] : null;
+      console.log(`   └─ ${String(c.qty).padStart(2)}x ${c.label.padEnd(30)} sku ${c.sku.padEnd(5)} ${ci ? `[${ci.Type}, ${ci.QtyOnHand} on hand]` : "*** NOT IN QUICKBOOKS ***"}`);
+    }
+    if (bad.length) problems.push({ p, verdict: `kit component(s) missing in QB: ${bad.map((c) => c.sku).join(", ")}` });
+    continue;
+  }
   const { hit, ambiguous } = resolve(p.qb_sku);
   const it = hit ? byId[hit.ref.Id] : null;
   const type = it ? it.Type : "—";
@@ -146,16 +182,20 @@ if (orderNum) {
   console.log(`\n\nDRY RUN — invoice lines ${orderNum} would post to QuickBooks:`);
   console.log("─".repeat(118));
   let bad = 0;
-  for (const [i, line] of (o.items || []).entries()) {
-    const sku = skuMap[line.product_id];
-    const { hit } = resolve(sku);
-    const it = hit ? byId[hit.ref.Id] : null;
-    const ok = Boolean(it);
-    if (!ok) bad++;
-    console.log(
-      `  ${i + 1}. ${String(line.qty).padStart(2)}x ${line.name.padEnd(26)} sku=${String(sku ?? "—").padEnd(5)} ` +
-      `→ ItemRef ${it ? `${it.Id} "${it.Name}" [${it.Type}]` : "*** NONE — no inventory hit ***"} ${ok ? "" : "  ⚠"}`
-    );
+  let n = 0;
+  for (const line of o.items || []) {
+    const parts = expand(line.product_id, line.name, line.qty, line.unit_price)
+      || [{ sku: skuMap[line.product_id], description: line.name, qty: line.qty, amount: round2(line.qty * line.unit_price) }];
+    if (parts.length > 1) console.log(`  (kit "${line.name}" x${line.qty} expands to ${parts.length} lines)`);
+    for (const part of parts) {
+      const { hit } = resolve(part.sku);
+      const it = hit ? byId[hit.ref.Id] : null;
+      if (!it) bad++;
+      console.log(
+        `  ${++n}. ${String(part.qty).padStart(2)}x ${part.description.padEnd(40)} sku=${String(part.sku ?? "—").padEnd(5)} $${part.amount.toFixed(2).padStart(7)} ` +
+        `→ ItemRef ${it ? `${it.Id} "${it.Name}" [${it.Type}]` : "*** NONE — no inventory hit ***"}${it ? "" : "  ⚠"}`
+      );
+    }
   }
   console.log(`\n  ${bad === 0 ? "✅ every line maps to an exact SKU match on a QuickBooks item."
     : `❌ ${bad} line(s) would NOT hit the right inventory item.`}`);

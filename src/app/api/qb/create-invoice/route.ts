@@ -7,6 +7,25 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+// Kits ship as their parts, so they must invoice as their parts — otherwise the
+// kit posts as one non-inventory line and the tubes, roll-ons and packets that
+// physically left the building are never deducted from stock. QuickBooks has no
+// bundle/group item in this company file and the Item API cannot create one, so
+// we expand the kit here instead: one invoice line per component, each pointing
+// at its own inventory item.
+//
+// `weight` is the component's normal wholesale value, used only to split the
+// kit's price across the lines. The split always sums to the kit's exact line
+// total (any rounding residual lands on the last component), so the invoice
+// total never moves.
+const BUNDLES: Record<string, { sku: string; qty: number; label: string; weight: number }[]> = {
+  "dca-intro-kit": [
+    { sku: "030", qty: 3, label: "Active 10 PLUS Tube", weight: 19.98 },
+    { sku: "032", qty: 3, label: "Active 10 PLUS Roll-On", weight: 19.98 },
+    { sku: "011a", qty: 10, label: "Active 10 PLUS Sample Packet", weight: 0.65 },
+  ],
+};
+
 export async function POST(req: NextRequest) {
   try {
     const { orderId } = await req.json();
@@ -150,41 +169,75 @@ export async function POST(req: NextRequest) {
     // a line with no ItemRef posts revenue without touching inventory, which is
     // worse than no invoice at all, so we refuse the whole thing instead.
     const orderItems = order.items || [];
-    const unresolved: string[] = [];
-    const lines = orderItems.map(
-      (item: { product_id?: string; name?: string; qty: number; unit_price?: number }, index: number) => {
-        const sku = item.product_id ? skuMap[item.product_id] : null;
-        const found = sku ? qbItemLookup[sku] : undefined;
-        const qbItem = found && found !== "AMBIGUOUS" ? found : null;
+    const round2 = (n: number) => Math.round(n * 100) / 100;
 
-        const label = `${item.name || item.product_id || "line " + (index + 1)}`;
-        if (!sku) {
-          unresolved.push(`${label} — no qb_sku set on the product`);
-        } else if (found === "AMBIGUOUS") {
-          unresolved.push(`${label} — SKU "${sku}" matches more than one QuickBooks item`);
-        } else if (!qbItem) {
-          unresolved.push(`${label} — no QuickBooks item named "${sku}"`);
-        }
+    // Expand kits into their components first, so what gets invoiced is what
+    // physically ships.
+    type Planned = { sku: string | null; description: string; qty: number; amount: number };
+    const planned: Planned[] = [];
+    for (const item of orderItems as { product_id?: string; name?: string; qty: number; unit_price?: number }[]) {
+      const qty = Number(item.qty) || 0;
+      const lineTotal = round2(qty * round2(item.unit_price || 0));
+      const bundle = item.product_id ? BUNDLES[item.product_id] : undefined;
 
-        console.log(
-          `Line ${index + 1}: product="${item.product_id}", sku="${sku}", ` +
-          `matched=${qbItem ? `YES → Id ${qbItem.Id} "${qbItem.Name}" [${qbItem.Type}] via ${qbItem.via}` : "NO"}`
-        );
-
-        const up = Math.round((item.unit_price || 0) * 100) / 100;
-        return {
-          LineNum: index + 1,
-          Amount: Math.round(item.qty * up * 100) / 100,
-          DetailType: "SalesItemLineDetail",
-          Description: item.name || "Product",
-          SalesItemLineDetail: {
-            Qty: item.qty,
-            UnitPrice: up,
-            ...(qbItem ? { ItemRef: { value: qbItem.Id, name: qbItem.Name } } : {}),
-          },
-        };
+      if (!bundle) {
+        planned.push({
+          sku: item.product_id ? skuMap[item.product_id] ?? null : null,
+          description: item.name || "Product",
+          qty,
+          amount: lineTotal,
+        });
+        continue;
       }
-    );
+
+      const totalWeight = bundle.reduce((s, c) => s + c.qty * c.weight, 0);
+      let allocated = 0;
+      bundle.forEach((c, i) => {
+        const amount =
+          i === bundle.length - 1
+            ? round2(lineTotal - allocated) // residual keeps the kit total exact
+            : round2((lineTotal * (c.qty * c.weight)) / totalWeight);
+        allocated = round2(allocated + amount);
+        planned.push({
+          sku: c.sku,
+          description: `${item.name || "Kit"} — ${c.label}`,
+          qty: c.qty * qty,
+          amount,
+        });
+      });
+      console.log(`Expanded kit "${item.product_id}" x${qty} into ${bundle.length} component lines totalling $${allocated}`);
+    }
+
+    const unresolved: string[] = [];
+    const lines = planned.map((p, index) => {
+      const found = p.sku ? qbItemLookup[p.sku] : undefined;
+      const qbItem = found && found !== "AMBIGUOUS" ? found : null;
+
+      if (!p.sku) {
+        unresolved.push(`${p.description} — no qb_sku set on the product`);
+      } else if (found === "AMBIGUOUS") {
+        unresolved.push(`${p.description} — SKU "${p.sku}" matches more than one QuickBooks item`);
+      } else if (!qbItem) {
+        unresolved.push(`${p.description} — no QuickBooks item named "${p.sku}"`);
+      }
+
+      console.log(
+        `Line ${index + 1}: sku="${p.sku}", qty=${p.qty}, amount=${p.amount}, ` +
+        `matched=${qbItem ? `YES → Id ${qbItem.Id} "${qbItem.Name}" [${qbItem.Type}] via ${qbItem.via}` : "NO"}`
+      );
+
+      return {
+        LineNum: index + 1,
+        Amount: p.amount,
+        DetailType: "SalesItemLineDetail",
+        Description: p.description,
+        SalesItemLineDetail: {
+          Qty: p.qty,
+          UnitPrice: p.qty ? round2(p.amount / p.qty) : 0,
+          ...(qbItem ? { ItemRef: { value: qbItem.Id, name: qbItem.Name } } : {}),
+        },
+      };
+    });
 
     if (unresolved.length > 0) {
       return NextResponse.json(
