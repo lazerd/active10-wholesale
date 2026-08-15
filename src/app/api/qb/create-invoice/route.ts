@@ -74,8 +74,18 @@ export async function POST(req: NextRequest) {
       if (p.qb_sku) skuMap[p.id] = p.qb_sku;
     });
 
-    // Fetch ALL items from QB and index by EVERY possible field
-    const qbItemLookup: Record<string, { Id: string; Name: string }> = {};
+    // Index QB items by the identifier fields ONLY — exact, case-sensitive.
+    //
+    // Do NOT index by Item.Id or Item.Description, and do NOT fuzzy-match by
+    // stripping/adding leading zeros. Our codes look like "004"/"008"/"011a",
+    // and QB Ids are small integers, so a zero-stripped "004" -> "4" could bind
+    // a line to whatever item happens to have Id 4. Case matters too: this file
+    // has both "011a" (Active 10 PLUS Sample Packet) and "011S" (ACTIFLEX).
+    // A wrong ItemRef silently decrements the wrong inventory, so the only
+    // acceptable match is an exact one.
+    type QBRef = { Id: string; Name: string; Type?: string; via: string };
+    const qbItemLookup: Record<string, QBRef | "AMBIGUOUS"> = {};
+    let qbItemsLoaded = false;
     try {
       const allItems = await qbApi(
         tokens.realm_id,
@@ -83,28 +93,38 @@ export async function POST(req: NextRequest) {
         `query?query=${encodeURIComponent("SELECT * FROM Item MAXRESULTS 1000")}`
       );
       const items = allItems?.QueryResponse?.Item || [];
+      const index = (key: unknown, item: any, via: string) => {
+        if (key === undefined || key === null || key === "") return;
+        const k = String(key);
+        const existing = qbItemLookup[k];
+        if (existing && existing !== "AMBIGUOUS" && existing.Id !== item.Id) {
+          // Two different items answer to the same key — refuse to guess.
+          console.error(`QB item key "${k}" is ambiguous: Id ${existing.Id} vs Id ${item.Id}`);
+          qbItemLookup[k] = "AMBIGUOUS";
+          return;
+        }
+        if (!existing) {
+          qbItemLookup[k] = { Id: item.Id, Name: item.Name, Type: item.Type, via };
+        }
+      };
       for (const item of items) {
-        const ref = { Id: item.Id, Name: item.Name };
-        // Index by every field so we can match no matter what
-        if (item.Name) qbItemLookup[item.Name] = ref;
-        if (item.Sku) qbItemLookup[item.Sku] = ref;
-        if (item.Description) qbItemLookup[item.Description] = ref;
-        if (item.FullyQualifiedName) qbItemLookup[item.FullyQualifiedName] = ref;
-        // Also store by Id for direct lookup
-        qbItemLookup[item.Id] = ref;
+        // In this company file the item Name carries the SKU code and the Sku
+        // field carries the human label, so both are worth indexing.
+        index(item.Name, item, "Name");
+        index(item.Sku, item, "Sku");
+        index(item.FullyQualifiedName, item, "FullyQualifiedName");
       }
-      // Log ALL fields from first 3 items so we can see the actual structure
-      console.log("SAMPLE QB ITEMS (first 3):", JSON.stringify(items.slice(0, 3).map((i: any) => ({
-        Id: i.Id,
-        Name: i.Name,
-        Sku: i.Sku,
-        Description: i.Description,
-        FullyQualifiedName: i.FullyQualifiedName,
-      })), null, 2));
-      console.log("All lookup keys:", Object.keys(qbItemLookup));
-      console.log("SKU map from DB:", JSON.stringify(skuMap));
+      qbItemsLoaded = items.length > 0;
+      console.log(`Loaded ${items.length} QB items; SKU map: ${JSON.stringify(skuMap)}`);
     } catch (e) {
       console.error("Failed to fetch QB items:", e);
+    }
+
+    if (!qbItemsLoaded) {
+      return NextResponse.json(
+        { error: "Could not load the QuickBooks item list — refusing to create an invoice that would miss inventory tracking." },
+        { status: 502 }
+      );
     }
 
     // Get next invoice number
@@ -126,22 +146,30 @@ export async function POST(req: NextRequest) {
       console.error("Failed to get latest invoice number:", e);
     }
 
-    // Build invoice line items
+    // Build invoice line items. Every line must resolve to a real QB item —
+    // a line with no ItemRef posts revenue without touching inventory, which is
+    // worse than no invoice at all, so we refuse the whole thing instead.
     const orderItems = order.items || [];
+    const unresolved: string[] = [];
     const lines = orderItems.map(
       (item: { product_id?: string; name?: string; qty: number; unit_price?: number }, index: number) => {
         const sku = item.product_id ? skuMap[item.product_id] : null;
+        const found = sku ? qbItemLookup[sku] : undefined;
+        const qbItem = found && found !== "AMBIGUOUS" ? found : null;
 
-        // Try matching by: SKU code, SKU with leading zeros stripped, product_id
-        let qbItem = null;
-        if (sku) {
-          qbItem = qbItemLookup[sku]
-            || qbItemLookup[sku.replace(/^0+/, '')]
-            || qbItemLookup[`0${sku}`]
-            || qbItemLookup[`00${sku}`];
+        const label = `${item.name || item.product_id || "line " + (index + 1)}`;
+        if (!sku) {
+          unresolved.push(`${label} — no qb_sku set on the product`);
+        } else if (found === "AMBIGUOUS") {
+          unresolved.push(`${label} — SKU "${sku}" matches more than one QuickBooks item`);
+        } else if (!qbItem) {
+          unresolved.push(`${label} — no QuickBooks item named "${sku}"`);
         }
 
-        console.log(`Line ${index + 1}: product="${item.product_id}", sku="${sku}", matched=${qbItem ? `YES → "${qbItem.Name}" (ID: ${qbItem.Id})` : "NO"}`);
+        console.log(
+          `Line ${index + 1}: product="${item.product_id}", sku="${sku}", ` +
+          `matched=${qbItem ? `YES → Id ${qbItem.Id} "${qbItem.Name}" [${qbItem.Type}] via ${qbItem.via}` : "NO"}`
+        );
 
         const up = Math.round((item.unit_price || 0) * 100) / 100;
         return {
@@ -157,6 +185,19 @@ export async function POST(req: NextRequest) {
         };
       }
     );
+
+    if (unresolved.length > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Invoice not created — these lines do not map to a QuickBooks item, so they would post without decrementing inventory:\n\n• " +
+            unresolved.join("\n• ") +
+            "\n\nCreate the matching item in QuickBooks (or fix qb_sku on the product), then try again.",
+          unresolved,
+        },
+        { status: 409 }
+      );
+    }
 
     const invoiceData: Record<string, unknown> = {
       CustomerRef: { value: qbCustomerId },
