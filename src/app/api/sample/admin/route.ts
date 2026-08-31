@@ -9,7 +9,11 @@ async function isAdmin(req: NextRequest): Promise<boolean> {
   const { data } = await supabaseAdmin.auth.getUser(token);
   const email = data?.user?.email?.toLowerCase();
   if (!email) return false;
-  const { data: ad } = await supabaseAdmin.from("admin_emails").select("email").ilike("email", email).single();
+  // Exact case-insensitive match, not ilike: PostgREST does not honor escaped
+  // LIKE wildcards, so an account whose address contains "_" (legal in an email)
+  // would pattern-match an admin row and inherit admin on this route.
+  const { data: admins } = await supabaseAdmin.from("admin_emails").select("email");
+  const ad = (admins || []).some((r: { email: string | null }) => (r.email || "").toLowerCase() === email);
   return !!ad;
 }
 

@@ -245,7 +245,12 @@ export default function App() {
     loadedUserId.current = s.user.id;
     setLoading(true);
     const email = s.user.email;
-    const adminQ = () => supabase.from("admin_emails").select("email").eq("email", email).maybeSingle();
+    // The admin lookup is case-insensitive: an address capitalized differently
+    // in admin_emails than in the JWT used to silently drop the user on the
+    // storefront. Compare in JS rather than with ilike -- PostgREST does not
+    // honor escaped LIKE wildcards, so an address containing "_" (legal in an
+    // email) would pattern-match somebody else's admin row.
+    const adminQ = () => supabase.from("admin_emails").select("email");
     try {
       let [adRes, cdRes] = await Promise.all([
         adminQ(),
@@ -260,7 +265,8 @@ export default function App() {
         if (seq !== loadSeq.current) return;
         if (adRes.error) { loadedUserId.current = null; setLoading(false); return; }
       }
-      const ad = adRes.data;
+      const target = (email || "").toLowerCase();
+      const ad = (adRes.data || []).some((r: { email: string | null }) => (r.email || "").toLowerCase() === target);
       const cd = cdRes.error ? null : cdRes.data;
       setIsAdmin(!!ad);
       setCustomer(cd ? (cd as Customer) : null);
