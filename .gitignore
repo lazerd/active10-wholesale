@@ -15,3 +15,6 @@ yarn-error.log*
 
 # Club prospect list (PII — lives in Supabase, regenerate from directors-club-db)
 scripts/club_prospects.csv
+
+# Send log for the chiropractor batch — a local record of what actually went out
+scripts/chiro-batch-sent.json
