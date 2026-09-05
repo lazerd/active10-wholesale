@@ -4,7 +4,15 @@ const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env
 
 export const SITE = "https://wholesale.getactive10.com";
 export const GMAIL_REDIRECT = `${SITE}/api/gmail/callback`;
-export const GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.send", "https://www.googleapis.com/auth/gmail.readonly"];
+// gmail.compose is what allows drafts.create — gmail.send only sends, it cannot
+// put anything in the Drafts folder. Adding it means the existing refresh token
+// is under-scoped: Gmail must be RECONNECTED once from the admin screen before
+// draft creation works.
+export const GMAIL_SCOPES = [
+  "https://www.googleapis.com/auth/gmail.send",
+  "https://www.googleapis.com/auth/gmail.compose",
+  "https://www.googleapis.com/auth/gmail.readonly",
+];
 
 // Returns a valid access token, refreshing if needed. null if not connected.
 export async function getGmailAccess(): Promise<string | null> {
@@ -90,4 +98,67 @@ export async function gmailRepliesFrom(accessToken: string, emails: string[], da
     }
   }
   return replied;
+}
+
+/**
+ * Creates a real Gmail DRAFT in the connected account, so it can be reviewed
+ * and sent from Gmail itself rather than from the portal.
+ *
+ * Needs the gmail.compose scope. Returns the draft id, or null with the reason
+ * logged — an under-scoped token fails here with 403 insufficientPermissions,
+ * which means Gmail was connected before compose was added and needs
+ * reconnecting.
+ */
+export async function gmailCreateDraft(
+  accessToken: string,
+  to: string,
+  subject: string,
+  body: string,
+): Promise<string | null> {
+  const raw = base64url(
+    [`To: ${to}`, `Subject: ${subject}`, "MIME-Version: 1.0", 'Content-Type: text/plain; charset="UTF-8"', "", body].join("\r\n")
+  );
+  const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/drafts", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ message: { raw } }),
+  });
+  if (!res.ok) {
+    console.error("Gmail draft create failed:", res.status, await res.text());
+    return null;
+  }
+  const json = await res.json();
+  return json?.id || null;
+}
+
+/**
+ * Recipient+subject pairs that already have a Gmail draft, so a second run
+ * cannot leave two identical drafts sitting in the folder. `outreach_touches`
+ * has nowhere to record a Gmail draft id, so Gmail itself is the record.
+ */
+export async function gmailExistingDraftKeys(accessToken: string): Promise<Set<string>> {
+  const keys = new Set<string>();
+  try {
+    const list = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/drafts?maxResults=500", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!list.ok) return keys;
+    const { drafts } = await list.json();
+    for (const d of drafts || []) {
+      const m = await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/drafts/${d.id}?format=metadata`,
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      );
+      if (!m.ok) continue;
+      const j = await m.json();
+      const hs = j?.message?.payload?.headers || [];
+      const to = (hs.find((h: any) => h.name?.toLowerCase() === "to")?.value || "").toLowerCase();
+      const subj = (hs.find((h: any) => h.name?.toLowerCase() === "subject")?.value || "").toLowerCase();
+      const addr = (to.match(/[^\s<>,]+@[^\s<>,]+/) || [""])[0];
+      if (addr) keys.add(addr + "|" + subj);
+    }
+  } catch (e) {
+    console.error("gmailExistingDraftKeys:", e);
+  }
+  return keys;
 }

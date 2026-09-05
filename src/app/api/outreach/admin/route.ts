@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { generatePitch, generateLinkedInPitch, nextAngle, ANGLES } from "@/lib/outreachPitch";
-import { getGmailAccess, gmailSend, gmailRepliesFrom } from "@/lib/gmail";
+import { getGmailAccess, gmailSend, gmailRepliesFrom, gmailCreateDraft, gmailExistingDraftKeys } from "@/lib/gmail";
 import { prepareBatch } from "@/lib/outreachBatch";
 
 const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
@@ -161,6 +161,61 @@ export async function POST(req: NextRequest) {
       const tc = (p.touch_count || 0) + 1;
       await supabaseAdmin.from("outreach_prospects").update({ status: tc > 1 ? "followed_up" : "emailed", touch_count: tc, last_contacted_at: new Date().toISOString() }).eq("id", prospectId);
       return NextResponse.json({ ok: true });
+    }
+
+    // Push the CRM drafts into the connected Gmail account as REAL drafts, so
+    // they can be reviewed and sent from Gmail itself. Needs the gmail.compose
+    // scope — an account connected before that scope was added returns 403 and
+    // has to be reconnected once.
+    if (action === "push_gmail_drafts") {
+      const token = await getGmailAccess();
+      if (!token) return NextResponse.json({ error: "Gmail isn't connected. Connect it in the Outreach tab first." }, { status: 400 });
+
+      const limit = Math.min(Number(body.limit) || 30, 60);
+      const wantTypes: string[] | null = Array.isArray(body.types) && body.types.length ? body.types : null;
+
+      const { data: touches } = await supabaseAdmin
+        .from("outreach_touches")
+        .select("id, prospect_id, subject, body, status")
+        .eq("status", "draft")
+        .order("created_at", { ascending: false })
+        .limit(500);
+
+      const ids = Array.from(new Set((touches || []).map((t: any) => t.prospect_id)));
+      const { data: pros } = await supabaseAdmin
+        .from("outreach_prospects")
+        .select("id, email, type, business")
+        .in("id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]);
+      const byId = new Map((pros || []).map((p: any) => [p.id, p]));
+
+      // Gmail is its own record of what has already been drafted — there is no
+      // column on outreach_touches to hold a draft id, so a duplicate would
+      // otherwise appear on every run.
+      const already = await gmailExistingDraftKeys(token);
+
+      let created = 0;
+      const skipped: string[] = [];
+      const failed: string[] = [];
+      for (const t of touches || []) {
+        if (created >= limit) break;
+        const p: any = byId.get(t.prospect_id);
+        if (!p?.email) continue;
+        if (wantTypes && !wantTypes.includes(p.type)) continue;
+        const key = p.email.toLowerCase() + "|" + (t.subject || "").toLowerCase();
+        if (already.has(key)) { skipped.push(p.email); continue; }
+        const id = await gmailCreateDraft(token, p.email, t.subject, t.body);
+        if (id) { created++; already.add(key); } else { failed.push(p.email); }
+      }
+
+      return NextResponse.json({
+        ok: true,
+        created,
+        skipped: skipped.length,
+        failed: failed.length,
+        ...(failed.length
+          ? { error: "Some drafts failed. If all of them failed, reconnect Gmail — the saved token predates the compose permission." }
+          : {}),
+      });
     }
 
     if (action === "check_replies") {

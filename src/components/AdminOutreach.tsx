@@ -36,6 +36,7 @@ export default function AdminOutreach() {
   const [savingStanding, setSavingStanding] = useState(false);
   const [typeFilter, setTypeFilter] = useState("all");
   const [preparing, setPreparing] = useState(false);
+  const [pushing, setPushing] = useState(false);
 
   const call = useCallback(async (payload: any) => {
     const { data: s } = await supabase.auth.getSession();
@@ -51,7 +52,41 @@ export default function AdminOutreach() {
 
   const sendGmail = async (p: Prospect, t: Touch) => { setBusy(t.id); setMsg(null); await call({ action: "update_touch", touchId: t.id, subject: t.subject, body: t.body }); const d = await call({ action: "send_gmail", touchId: t.id, prospectId: p.id }); setBusy(null); if (d.ok) { setDrafts((x) => { const n = { ...x }; delete n[p.id]; return n; }); setMsg({ t: `Sent to ${p.email} via Gmail.`, ok: true }); load(); } else { setMsg({ t: d.error || "Send failed", ok: false }); refreshGmail(); } };
   const checkReplies = async () => { setBusy("replies"); setMsg(null); const d = await call({ action: "check_replies" }); setBusy(null); if (d.ok) { setMsg({ t: `Checked Gmail — ${d.replies} new repl${d.replies === 1 ? "y" : "ies"} found.`, ok: true }); load(); } else { setMsg({ t: d.error || "Failed", ok: false }); refreshGmail(); } };
-  const runPrepare = async () => { setPreparing(true); setMsg(null); const d = await call({ action: "prepare_batch" }); setPreparing(false); if (d.ok) { setTypeFilter("club"); setMsg({ t: `Prepared ${d.firstTouch} new + ${d.recalibrate} follow-up draft${d.firstTouch + d.recalibrate === 1 ? "" : "s"}${d.replies ? `, folded in ${d.replies} repl${d.replies === 1 ? "y" : "ies"}` : ""}. Review & send below.`, ok: true }); load(); } else setMsg({ t: d.error || "Failed", ok: false }); };
+  const runPrepare = async () => {
+    setPreparing(true); setMsg(null);
+    const d = await call({ action: "prepare_batch" });
+    setPreparing(false);
+    if (!d.ok) { setMsg({ t: d.error || "Failed", ok: false }); return; }
+    // Show the campaign that actually got drafted. This used to hard-switch to
+    // "club", which hid a chiropractor batch behind the wrong filter.
+    const byType: Record<string, number> = d.byType || {};
+    const top = Object.keys(byType).sort((a, b) => byType[b] - byType[a])[0];
+    if (top) setTypeFilter(top);
+    const n = (d.firstTouch || 0) + (d.recalibrate || 0);
+    const detail = Object.keys(byType).length
+      ? " (" + Object.entries(byType).map(([k, v]) => `${v} ${k}`).join(", ") + ")"
+      : "";
+    setMsg({
+      t: n === 0
+        ? "Nothing to draft — every prospect already has a draft, or none are waiting."
+        : `Prepared ${d.firstTouch} new + ${d.recalibrate} follow-up draft${n === 1 ? "" : "s"}${detail}${d.replies ? `, folded in ${d.replies} repl${d.replies === 1 ? "y" : "ies"}` : ""}. Review below, or push them to Gmail.`,
+      ok: true,
+    });
+    load();
+  };
+
+  const pushToGmail = async () => {
+    setPushing(true); setMsg(null);
+    const d = await call({ action: "push_gmail_drafts", limit: 30, types: typeFilter && typeFilter !== "all" ? [typeFilter] : undefined });
+    setPushing(false);
+    if (!d.ok) { setMsg({ t: d.error || "Failed", ok: false }); return; }
+    setMsg({
+      t: d.created === 0 && d.failed
+        ? "Gmail refused every draft — reconnect Gmail below. The saved login predates the permission that allows creating drafts."
+        : `${d.created} draft${d.created === 1 ? "" : "s"} now in your Gmail Drafts folder${d.skipped ? `, ${d.skipped} already there` : ""}${d.failed ? `, ${d.failed} failed` : ""}.`,
+      ok: d.created > 0,
+    });
+  };
   const disconnectGmail = async () => { if (!confirm("Disconnect Gmail?")) return; await fetch("/api/gmail/disconnect", { method: "POST" }); setGmail({ connected: false, email: null, configured: gmail.configured }); };
 
   const card: React.CSSProperties = { background: "rgba(255,255,255,.03)", border: `1px solid ${B}22`, borderRadius: 14 };
@@ -119,6 +154,7 @@ export default function AdminOutreach() {
             <div style={{ fontSize: 11, color: "rgba(255,255,255,.45)", marginTop: 2 }}>{clubRows.length} clubs loaded · {contacted} contacted · <span style={{ color: GR, fontWeight: 700 }}>{won} won</span> / 300 goal</div>
           </div>
           <button onClick={runPrepare} disabled={preparing} style={{ ...btnP, opacity: preparing ? 0.5 : 1 }}>{preparing ? "Preparing…" : "📝 Prepare today's drafts"}</button>
+          <button onClick={pushToGmail} disabled={pushing} title="Copies the drafts below into your Gmail Drafts folder so you can send them from Gmail" style={{ ...btnS, opacity: pushing ? 0.5 : 1 }}>{pushing ? "Pushing…" : "✉️ Push to Gmail drafts"}</button>
         </div>
         <div style={{ height: 8, background: "rgba(255,255,255,.08)", borderRadius: 6, marginTop: 10, overflow: "hidden" }}><div style={{ width: `${pct}%`, height: "100%", background: `linear-gradient(90deg,${B},${GR})` }} /></div>
         <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
