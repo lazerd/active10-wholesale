@@ -9,12 +9,12 @@ type SampleReq = {
   address: string | null; city: string | null; state: string | null; zip: string | null; type: string | null;
   status: string; created_at: string;
   tubes: number | null; packets: number | null; shipped_at: string | null;
-  tracking: string | null; notes: string | null; ordered?: boolean;
+  tracking: string | null; notes: string | null; ordered?: boolean; hasAccount?: boolean;
 };
 
 type Stats = {
   goalTubes: number; tubesShipped: number; packetsShipped: number;
-  officesShipped: number; pending: number; converted: number; conversionRate: number | null;
+  officesShipped: number; pending: number; converted: number; accounts: number; conversionRate: number | null;
 };
 
 const fmtDate = (iso: string | null) =>
@@ -97,6 +97,11 @@ export default function AdminSamples() {
           <div style={{ fontSize: 11.5, color: "rgba(255,255,255,.45)" }}>
             ordered after{stats.conversionRate !== null ? ` · ${(stats.conversionRate * 100).toFixed(0)}%` : ""}
           </div>
+          {stats.accounts > stats.converted && (
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,.35)", marginTop: 2 }}>
+              {stats.accounts} opened an account
+            </div>
+          )}
         </div>
       </div>
       <div style={{ height: 8, borderRadius: 99, background: "rgba(255,255,255,.07)", overflow: "hidden" }}>
@@ -127,7 +132,11 @@ export default function AdminSamples() {
             <div style={{ fontWeight: 700, fontSize: 15, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               {r.business || r.name}
               {r.type ? <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,.4)" }}>{r.type}</span> : null}
-              {r.ordered ? <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: GR, border: `1px solid ${GR}55`, borderRadius: 99, padding: "2px 8px" }}>Ordered</span> : null}
+              {r.ordered
+                ? <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: GR, border: `1px solid ${GR}55`, borderRadius: 99, padding: "2px 8px" }}>Ordered</span>
+                : r.hasAccount
+                  ? <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: AM, border: `1px solid ${AM}55`, borderRadius: 99, padding: "2px 8px" }}>Has account</span>
+                  : null}
             </div>
             <div style={{ fontSize: 12.5, color: "rgba(255,255,255,.55)", marginTop: 3 }}>{r.name}{r.email ? ` · ${r.email}` : ""}{r.phone ? ` · ${r.phone}` : ""}</div>
             <div style={{ fontSize: 13, color: "white", marginTop: 6, fontWeight: 500 }}>📦 {addr || "No address"}</div>

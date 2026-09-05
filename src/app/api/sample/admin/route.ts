@@ -38,12 +38,21 @@ export async function POST(req: NextRequest) {
       const { data } = await supabaseAdmin.from("sample_requests").select("*").order("created_at", { ascending: false });
       const rows = (data || []) as SampleRow[];
 
-      // Conversion is derived, not typed in. A sample recipient counts as
-      // converted when an account exists on their address AND has ordered —
-      // asking Darrin to tick a box for this would just go stale.
+      // Conversion is derived, not typed in — a tickbox would go stale in a
+      // week. It is reported as TWO numbers on purpose:
+      //
+      //   opened an account  — a customers row exists on that address
+      //   ordered            — total_orders > 0
+      //
+      // They are far apart here, and the gap is not failure: plenty of this
+      // book orders by replying to an email and gets invoiced through
+      // QuickBooks, which never touches the portal and so never increments
+      // total_orders. Reporting only "ordered" would badly under-count the
+      // campaign and make a working funnel look dead.
       const emails = Array.from(
         new Set(rows.map((r) => (r.email || "").trim().toLowerCase()).filter(Boolean)),
       );
+      const hasAccount = new Set<string>();
       const ordered = new Set<string>();
       if (emails.length) {
         const { data: custs } = await supabaseAdmin
@@ -51,7 +60,10 @@ export async function POST(req: NextRequest) {
           .select("email, total_orders")
           .in("email", emails);
         for (const c of (custs || []) as { email: string | null; total_orders: number | null }[]) {
-          if ((c.total_orders || 0) > 0 && c.email) ordered.add(c.email.trim().toLowerCase());
+          const e = (c.email || "").trim().toLowerCase();
+          if (!e) continue;
+          hasAccount.add(e);
+          if ((c.total_orders || 0) > 0) ordered.add(e);
         }
       }
 
@@ -59,10 +71,14 @@ export async function POST(req: NextRequest) {
       const tubesShipped = shippedRows.reduce((n, r) => n + (r.tubes ?? 1), 0);
       const packetsShipped = shippedRows.reduce((n, r) => n + (r.packets ?? 6), 0);
       const converted = shippedRows.filter((r) => ordered.has((r.email || "").trim().toLowerCase())).length;
+      const accounts = shippedRows.filter((r) => hasAccount.has((r.email || "").trim().toLowerCase())).length;
 
       return NextResponse.json({
         ok: true,
-        requests: rows.map((r) => ({ ...r, ordered: ordered.has((r.email || "").trim().toLowerCase()) })),
+        requests: rows.map((r) => {
+          const e = (r.email || "").trim().toLowerCase();
+          return { ...r, ordered: ordered.has(e), hasAccount: hasAccount.has(e) };
+        }),
         stats: {
           goalTubes: GOAL_TUBES,
           tubesShipped,
@@ -70,6 +86,7 @@ export async function POST(req: NextRequest) {
           officesShipped: shippedRows.length,
           pending: rows.length - shippedRows.length,
           converted,
+          accounts,
           // Percent of shipped practices that went on to order. Undefined until
           // something has actually shipped — a 0% on an empty campaign reads as
           // failure rather than "no data".

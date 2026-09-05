@@ -77,6 +77,16 @@ const SKIP_HOSTS = [
 /** Shared inboxes we do NOT want — no-reply and the like never reach a human. */
 const BAD_LOCALPARTS = ['no-reply', 'noreply', 'donotreply', 'postmaster', 'abuse', 'privacy', 'webmaster'];
 
+/**
+ * Consumer mail hosts. A customer at gmail.com must never blacklist gmail.com
+ * for everyone else, so the domain-level customer check skips these.
+ */
+const FREE_MAIL = [
+  'gmail.com', 'yahoo.com', 'aol.com', 'hotmail.com', 'outlook.com', 'icloud.com',
+  'me.com', 'mac.com', 'msn.com', 'comcast.net', 'att.net', 'earthlink.net',
+  'sbcglobal.net', 'verizon.net', 'live.com', 'protonmail.com', 'proton.me',
+];
+
 const hostOf = (url) => {
   try { return new URL(url).hostname.replace(/^www\./, '').toLowerCase(); } catch { return ''; }
 };
@@ -132,7 +142,24 @@ async function main() {
   const { data: existing } = await db.from('outreach_prospects').select('email, website');
   const haveEmail = new Set((existing || []).map((r) => (r.email || '').toLowerCase()).filter(Boolean));
   const haveHost = new Set((existing || []).map((r) => hostOf(r.website || '')).filter(Boolean));
-  console.log(`already in the CRM: ${haveEmail.size} addresses across ${haveHost.size} sites\n`);
+
+  // ...and everyone who ALREADY BUYS from us. Cold-pitching free samples to a
+  // paying practice is the single worst thing this script could do, and the
+  // prospect table alone would not catch it — customers live in `customers`.
+  // Match on the address and on the practice's domain, since the person who
+  // opened the account (dr.smith@) is often not the address on the website
+  // (info@). Free mail hosts are excluded from the domain rule or gmail.com
+  // would blacklist the internet.
+  const { data: customers } = await db.from('customers').select('email');
+  for (const c of customers || []) {
+    const e = (c.email || '').toLowerCase();
+    if (!e) continue;
+    haveEmail.add(e);
+    const d = e.split('@')[1];
+    if (d && !FREE_MAIL.includes(d)) haveHost.add(d);
+  }
+
+  console.log(`already known: ${haveEmail.size} addresses across ${haveHost.size} domains (prospects + customers)\n`);
 
   const found = [];
   const seenHost = new Set();
