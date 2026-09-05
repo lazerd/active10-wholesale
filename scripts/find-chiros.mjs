@@ -49,15 +49,27 @@ const citiesFile = arg('cities-file');
 if (citiesFile) cities = fs.readFileSync(citiesFile, 'utf8').split('\n').map((s) => s.trim()).filter(Boolean);
 else if (arg('cities')) cities = arg('cities').split(',').map((s) => s.trim()).filter(Boolean);
 
-if (!cities.length) {
+// --urls-file skips search entirely and reads practice sites straight from a
+// file, one per line, "url<TAB>City ST" optional. Search is only ever a way of
+// producing that list — this lets the list come from anywhere (a search run
+// done by hand, an export, a directory) so the script is not blocked on
+// holding a Brave key.
+const urlsFile = arg('urls-file');
+let seedUrls = [];
+if (urlsFile) {
+  seedUrls = fs.readFileSync(urlsFile, 'utf8').split('\n').map((s) => s.trim()).filter((s) => s && !s.startsWith('#'));
+}
+
+if (!cities.length && !seedUrls.length) {
   console.error('Give me somewhere to look:');
   console.error('  node scripts/find-chiros.mjs --cities "Walnut Creek CA,Danville CA"');
-  console.error('  node scripts/find-chiros.mjs --cities-file cities.txt --live');
+  console.error('  node scripts/find-chiros.mjs --urls-file sites.txt --live');
   process.exit(1);
 }
-if (!env.BRAVE_API_KEY) {
-  console.error('BRAVE_API_KEY is not in .env.local.');
+if (!seedUrls.length && !env.BRAVE_API_KEY) {
+  console.error('BRAVE_API_KEY is not in .env.local, and no --urls-file was given.');
   console.error('Free key (2,000 queries/month) at https://brave.com/search/api/ — one query per city.');
+  console.error('Or hand it a list of practice sites: --urls-file sites.txt');
   process.exit(1);
 }
 
@@ -164,14 +176,28 @@ async function main() {
   const found = [];
   const seenHost = new Set();
 
-  for (const city of cities) {
+  // One "batch" per city when searching, or a single batch from the URL file.
+  const batches = seedUrls.length
+    ? [{
+        label: 'supplied list',
+        results: seedUrls.map((line) => {
+          const [url, city] = line.split('\t');
+          return { title: '', url: url.trim(), city: (city || '').trim() };
+        }),
+      }]
+    : cities.map((c) => ({ label: c, results: null }));
+
+  for (const batch of batches) {
+    const city = batch.label;
     if (found.length >= LIMIT) break;
-    let results = [];
-    try {
-      results = await braveSearch(`chiropractor ${city}`);
-    } catch (e) {
-      console.log(`  ! ${city}: ${e.message}`);
-      continue;
+    let results = batch.results;
+    if (!results) {
+      try {
+        results = await braveSearch(`chiropractor ${city}`);
+      } catch (e) {
+        console.log(`  ! ${city}: ${e.message}`);
+        continue;
+      }
     }
 
     let added = 0;
@@ -188,7 +214,11 @@ async function main() {
       haveEmail.add(email);
 
       const business = (r.title || host).replace(/\s+/g, ' ').trim().slice(0, 160);
-      found.push({ business, email, website: 'https://' + host, city, type: 'chiropractor', source: 'web scrape', status: 'prospected', channel: 'email' });
+      found.push({
+        business, email, website: 'https://' + host,
+        city: (r.city || city || '').slice(0, 80),
+        type: 'chiropractor', source: 'web scrape', status: 'prospected', channel: 'email',
+      });
       added += 1;
       console.log(`  +  ${host.padEnd(38)} ${email}`);
       await sleep(400); // be a considerate visitor
