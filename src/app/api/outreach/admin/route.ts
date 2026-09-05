@@ -192,7 +192,8 @@ export async function POST(req: NextRequest) {
     // Draft-and-approve daily engine (shared with the cron). Prepares — does NOT
     // send — the day's club drafts; Darrin reviews + one-click sends each.
     if (action === "prepare_batch") {
-      const res = await prepareBatch();
+      // Optional { types: ["chiropractor"] } to draft one campaign only.
+      const res = await prepareBatch(Array.isArray(body.types) ? { types: body.types } : {});
       return NextResponse.json({ ok: true, ...res });
     }
 

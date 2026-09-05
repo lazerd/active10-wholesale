@@ -1,13 +1,31 @@
 import { createClient } from "@supabase/supabase-js";
-import { generatePitch, nextAngle } from "@/lib/outreachPitch";
+import { generatePitch, nextAngle, ANGLES } from "@/lib/outreachPitch";
 import { getGmailAccess, gmailRepliesFrom } from "@/lib/gmail";
 
-// Prepares (does NOT send) the day's club outreach drafts:
+/**
+ * Which prospect types this run drafts for, in priority order — the quota is
+ * filled from the front of this list.
+ *
+ * It used to be hardcoded to "club", which silently meant a chiropractor could
+ * never be drafted at all: 30 chiropractors sat in the CRM marked `prospected`
+ * and the batch returned nothing, because it was only ever asking for clubs.
+ * Chiropractors lead now because that is the campaign actually running; clubs
+ * pick up whatever quota is left rather than being starved.
+ */
+const DEFAULT_TYPES = ["chiropractor", "club", "affiliate", "other"];
+
+/** The first thing we ever say to a given type of prospect. */
+const firstAngleFor = (type: string) => (ANGLES[type] || ANGLES.other)?.[0]?.key || "founder_intro";
+
+// Prepares (does NOT send) the day's outreach drafts:
 //  1. folds in replies so we never follow up someone who answered,
-//  2. drafts first-touch founder letters for the next `daily_quota` clubs,
+//  2. drafts first-touch founder letters for the next `daily_quota` prospects,
 //  3. drafts 30-day recalibrate (next-angle) follow-ups for silent contacts.
 // Darrin reviews each draft and one-click sends via the send_gmail action.
-export async function prepareBatch(): Promise<{ firstTouch: number; recalibrate: number; replies: number }> {
+export async function prepareBatch(
+  opts: { types?: string[] } = {},
+): Promise<{ firstTouch: number; recalibrate: number; replies: number; byType: Record<string, number> }> {
+  const types = opts.types?.length ? opts.types : DEFAULT_TYPES;
   const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
   const DAY_MS = 86400000;
@@ -55,8 +73,12 @@ export async function prepareBatch(): Promise<{ firstTouch: number; recalibrate:
   const PERSONAL_DOMAINS = new Set(["gmail.com", "yahoo.com", "hotmail.com", "aol.com", "outlook.com", "icloud.com", "comcast.net", "live.com", "me.com", "msn.com", "att.net", "bellsouth.net", "verizon.net", "mail.ru", "googlemail.com", "mac.com", "windstream.net"]);
   const isPersonal = (email: string) => PERSONAL_DOMAINS.has((email.split("@")[1] || "").toLowerCase());
   let firstTouch = 0;
-  const { data: freshRaw } = await sb.from("outreach_prospects").select("*").eq("type", "club").eq("status", "prospected").limit(1000);
+  const byType: Record<string, number> = {};
+  const { data: freshRaw } = await sb.from("outreach_prospects").select("*").in("type", types).eq("status", "prospected").limit(1000);
   const fresh = (freshRaw || []).sort((a, b) => {
+    // Campaign priority first, so a backlog of one type cannot starve another.
+    const ta = types.indexOf(a.type), tb = types.indexOf(b.type);
+    if (ta !== tb) return ta - tb;
     const pa = isPersonal(a.email || "") ? 1 : 0, pb = isPersonal(b.email || "") ? 1 : 0;
     if (pa !== pb) return pa - pb;                       // work-domain first
     return (a.created_at || "").localeCompare(b.created_at || "");
@@ -64,23 +86,24 @@ export async function prepareBatch(): Promise<{ firstTouch: number; recalibrate:
   for (const p of fresh) {
     if (firstTouch >= quota) break;
     if (hasDraft.has(p.id)) continue;
-    await draftFor(p, "proshop_intro");
+    await draftFor(p, firstAngleFor(p.type));
     firstTouch++;
+    byType[p.type] = (byType[p.type] || 0) + 1;
   }
 
   // 3) Recalibrate drafts (30+ days quiet, under touch cap).
   let recalibrate = 0;
   const cutoff = new Date(Date.now() - RECAL_DAYS * DAY_MS).toISOString();
-  const { data: quiet } = await sb.from("outreach_prospects").select("*").eq("type", "club").in("status", ["emailed", "followed_up"]).lt("last_contacted_at", cutoff).lt("touch_count", RECAL_MAX_TOUCHES).order("last_contacted_at", { ascending: true }).limit(RECAL_CAP + 50);
+  const { data: quiet } = await sb.from("outreach_prospects").select("*").in("type", types).in("status", ["emailed", "followed_up"]).lt("last_contacted_at", cutoff).lt("touch_count", RECAL_MAX_TOUCHES).order("last_contacted_at", { ascending: true }).limit(RECAL_CAP + 50);
   for (const p of quiet || []) {
     if (recalibrate >= RECAL_CAP) break;
     if (hasDraft.has(p.id)) continue;
     const { data: prior } = await sb.from("outreach_touches").select("angle").eq("prospect_id", p.id);
     const used = (prior || []).map((t) => t.angle).filter(Boolean) as string[];
-    await draftFor(p, nextAngle("club", used));
+    await draftFor(p, nextAngle(p.type, used));
     recalibrate++;
   }
 
   await sb.from("outreach_settings").upsert({ id: "default", last_batch_date: new Date().toISOString().slice(0, 10), updated_at: new Date().toISOString() });
-  return { firstTouch, recalibrate, replies };
+  return { firstTouch, recalibrate, replies, byType };
 }
