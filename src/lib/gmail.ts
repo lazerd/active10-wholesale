@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { encodeMimeHeader } from "./mimeHeader";
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
@@ -61,7 +62,7 @@ function base64url(s: string) {
 // Sends a plain-text email from the connected Gmail account. Returns true on success.
 export async function gmailSend(accessToken: string, to: string, subject: string, body: string): Promise<boolean> {
   const raw = base64url(
-    [`To: ${to}`, `Subject: ${subject}`, "MIME-Version: 1.0", 'Content-Type: text/plain; charset="UTF-8"', "", body].join("\r\n")
+    [`To: ${to}`, `Subject: ${encodeMimeHeader(subject)}`, "MIME-Version: 1.0", 'Content-Type: text/plain; charset="UTF-8"', "", body].join("\r\n")
   );
   const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
     method: "POST",
@@ -116,7 +117,7 @@ export async function gmailCreateDraft(
   body: string,
 ): Promise<string | null> {
   const raw = base64url(
-    [`To: ${to}`, `Subject: ${subject}`, "MIME-Version: 1.0", 'Content-Type: text/plain; charset="UTF-8"', "", body].join("\r\n")
+    [`To: ${to}`, `Subject: ${encodeMimeHeader(subject)}`, "MIME-Version: 1.0", 'Content-Type: text/plain; charset="UTF-8"', "", body].join("\r\n")
   );
   const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/drafts", {
     method: "POST",

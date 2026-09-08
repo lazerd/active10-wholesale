@@ -24,6 +24,7 @@
 import { createClient } from '@supabase/supabase-js';
 import fs from 'fs';
 import path from 'path';
+import { encodeMimeHeader } from './mimeHeader.mjs';
 
 const HERE = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
 const LOG_PATH = path.join(HERE, 'chiro-batch-sent.json');
@@ -175,7 +176,7 @@ async function sendOne(token, to, subject, text, html) {
   const boundary = 'b' + Math.random().toString(36).slice(2);
   const mime = [
     `To: ${to}`,
-    `Subject: ${subject}`,
+    `Subject: ${encodeMimeHeader(subject)}`,
     'MIME-Version: 1.0',
     `Content-Type: multipart/alternative; boundary="${boundary}"`,
     '',
