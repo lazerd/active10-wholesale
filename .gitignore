@@ -18,3 +18,6 @@ scripts/club_prospects.csv
 
 # Send log for the chiropractor batch — a local record of what actually went out
 scripts/chiro-batch-sent.json
+
+# Console transcripts from batch runs — local records, like the send log above
+scripts/chiro-batch-run-*.log
