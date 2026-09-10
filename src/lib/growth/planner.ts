@@ -1,0 +1,233 @@
+import {
+  db, loadSettings, fetchAll, ptParts, ptToUtc, isWeekendDate, isInternal, greetingFor, withFooter, toHtml,
+  FREE_MAIL, DAY_MS, LANE_ORDER, OVERFLOW_ORDER, DEFAULT_CAPS, Lane,
+} from "./config";
+import { loadQbContacts, lastOrderSummary, Contact } from "./qb";
+import * as T from "./templates";
+import { getGmailAccess } from "@/lib/gmail";
+import { latestSentTo, threadHasMessageFrom } from "./gmailx";
+
+export type PlanRow = {
+  plan_date: string; send_at: string; lane: Lane; step: number; email: string; name: string | null; business: string | null;
+  subject: string; body_text: string; body_html: string; dedupe_key: string; reply_to_queue_id: string | null;
+  prospect_id: string | null; qb_customer_id: string | null; meta: any;
+};
+type Cand = Omit<PlanRow, "plan_date" | "send_at" | "body_text" | "body_html"> & { text: string };
+type Pre = { email: string; quiet: number; used?: boolean; build: () => Promise<Cand | null> };
+
+export type PlanResult = {
+  date: string; skipped?: string; rows: PlanRow[]; counts: Record<string, number>; pools: Record<string, number>; notes: string[];
+};
+
+/** Accounts this size are Darrin's personal relationships — never automated. */
+const HOUSE_ACCOUNT = 10000;
+const lower = (s?: string | null) => (s || "").trim().toLowerCase();
+const domainOf = (e: string) => e.split("@")[1] || "";
+const cleanBusiness = (b?: string | null) => {
+  const s = (b || "").replace(/\s+/g, " ").trim();
+  return !s || /\.(com|net|org|biz|us)\b/i.test(s) || s.length > 60 ? null : s;
+};
+
+export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): Promise<PlanResult> {
+  const sb = db();
+  const s = await loadSettings(sb);
+  const date = opts.date || ptParts().date;
+  const dry = !!opts.dryRun;
+  const empty = (skipped: string): PlanResult => ({ date, skipped, rows: [], counts: {}, pools: {}, notes: [] });
+  if (!dry) {
+    if (!s.enabled) return empty("disabled");
+    if (s.start_date && date < s.start_date) return empty(`starts ${s.start_date}`);
+    if (s.paused_on === date) return empty("paused today");
+    if (isWeekendDate(date)) return empty("weekend");
+    if (s.last_plan_date === date) return empty("already planned");
+  }
+
+  const notes: string[] = [];
+  const caps: Record<Lane, number> = { ...DEFAULT_CAPS, ...(s.lane_caps || {}) } as Record<Lane, number>;
+  const cap = s.daily_cap;
+  const ref = ptToUtc(date, 12 * 60).getTime();
+  const age = (iso: string) => Math.floor((ref - Date.parse(iso.length === 10 ? iso + "T12:00:00Z" : iso)) / DAY_MS);
+
+  if (!dry) await sb.from("growth_queue").update({ status: "skipped", skip_reason: "not sent on its day" }).eq("status", "planned").lt("plan_date", date);
+
+  const [sup, events, queue, portal, prospects, samples] = await Promise.all([
+    fetchAll<any>(() => sb.from("growth_suppression").select("email")),
+    fetchAll<any>(() => sb.from("growth_events").select("email, kind, at").gte("at", new Date(ref - 60 * DAY_MS).toISOString())),
+    fetchAll<any>(() => sb.from("growth_queue").select("id, email, lane, step, status, dedupe_key, sent_at, subject, gmail_thread_id, message_id_header, meta, name, business, qb_customer_id").in("status", ["planned", "sending", "sent"])),
+    fetchAll<any>(() => sb.from("customers").select("email")),
+    fetchAll<any>(() => sb.from("outreach_prospects").select("id, name, business, email, type, source, status, touch_count, last_contacted_at, created_at").in("type", ["chiropractor", "club"])),
+    fetchAll<any>(() => sb.from("sample_requests").select("*")),
+  ]);
+
+  const suppressed = new Set(sup.map((r) => lower(r.email)));
+  const spoke = new Set(events.filter((e) => ["reply", "unsubscribe", "bounce"].includes(e.kind)).map((e) => lower(e.email)));
+  const lastContact = new Map<string, number>();
+  const touch = (e: string, at: string) => { const t = Date.parse(at); const k = lower(e); if (!(lastContact.get(k)! >= t)) lastContact.set(k, t); };
+  for (const e of events) if (e.kind === "contacted") touch(e.email, e.at);
+  for (const q of queue) if (q.status === "sent" && q.sent_at) touch(q.email, q.sent_at);
+  const usedKeys = new Set(queue.map((q) => q.dedupe_key));
+  const taken = new Set<string>();
+  const quietDays = (e: string) => (lastContact.has(e) ? (ref - lastContact.get(e)!) / DAY_MS : Infinity);
+  const blocked = (e: string, quiet: number) =>
+    !e || isInternal(e) || suppressed.has(e) || spoke.has(e) || taken.has(e) || quietDays(e) < quiet;
+
+  let contacts: Contact[] = [];
+  try { contacts = await loadQbContacts(); } catch (e: any) { notes.push("QuickBooks unavailable, customer lanes skipped: " + e.message); }
+  const byEmail = new Map(contacts.map((c) => [c.email, c]));
+  const portalEmails = new Set(portal.map((c) => lower(c.email)).filter(Boolean));
+  const customerEmails = new Set<string>([...Array.from(portalEmails), ...contacts.filter((c) => c.orders > 0).map((c) => c.email)]);
+  const customerDomains = new Set(Array.from(customerEmails).map(domainOf).filter((d) => d && !FREE_MAIL.has(d)));
+  const isCustomer = (e: string) => customerEmails.has(e) || customerDomains.has(domainOf(e));
+
+  let token: string | null = null;
+  const gmail = async () => (token ??= await getGmailAccess());
+
+  const lanes: Record<Lane, Pre[]> = { sample_followup: [], restock: [], winback_bump: [], cold_bump: [], winback: [], chiro: [], club: [] };
+  const base = { reply_to_queue_id: null, prospect_id: null, qb_customer_id: null, meta: {} };
+
+  // ── sample follow-up: a sample went out 12–60 days ago, no order since ──
+  for (const r of samples) {
+    const e = lower(r.email), when = r.shipped_at || r.created_at;
+    if (!e || !when || r.ordered_at) continue;
+    const a = age(when);
+    if (a < 12 || a > 60) continue;
+    const key = `sample:${e}`;
+    const c = byEmail.get(e);
+    if (usedKeys.has(key) || (c?.lastDate && c.lastDate >= String(when).slice(0, 10))) continue;
+    lanes.sample_followup.push({ email: e, quiet: 5, build: async () => {
+      const g = greetingFor(r.name, null, null, r.business);
+      const m = T.sampleFollowup(g);
+      return { ...base, lane: "sample_followup", step: 1, email: e, name: r.name, business: r.business, subject: m.subject, text: m.text, dedupe_key: key, prospect_id: r.prospect_id || null, meta: { greeting: g, sampleAt: when } };
+    } });
+  }
+
+  // ── restock: past their own reorder cadence, not yet lapsed ──
+  for (const c of contacts.filter((c) => c.lastDate && c.orders >= 2 && c.gapDays && c.spent < HOUSE_ACCOUNT).sort((a, b) => b.spent - a.spent)) {
+    const d = age(c.lastDate!);
+    const due = Math.max(45, Math.round(c.gapDays! * 1.15));
+    if (d < due || d >= 150) continue;
+    const key = `restock:${c.email}:${c.lastDate}`;
+    if (usedKeys.has(key)) continue;
+    lanes.restock.push({ email: c.email, quiet: 21, build: async () => {
+      const g = greetingFor(c.display, c.given, c.family, c.company);
+      const m = T.restock(g, { lastDate: c.lastDate!, days: d, gapDays: c.gapDays!, lastOrder: await lastOrderSummary(c.qbId), portal: portalEmails.has(c.email) });
+      return { ...base, lane: "restock", step: 1, email: c.email, name: c.display, business: c.company, subject: m.subject, text: m.text, dedupe_key: key, qb_customer_id: c.qbId, meta: { greeting: g, lastDate: c.lastDate, days: d, gap: c.gapDays, spent: c.spent } };
+    } });
+  }
+
+  // ── win-back nudge: one in-thread reminder 6–14 days after the offer ──
+  for (const q of queue.filter((q) => q.lane === "winback" && q.step === 1 && q.status === "sent" && q.sent_at)) {
+    const a = age(q.sent_at);
+    if (a < 6 || a > 14) continue;
+    const key = String(q.dedupe_key).replace(/:1$/, ":2");
+    const c = byEmail.get(lower(q.email));
+    if (usedKeys.has(key) || (c?.lastDate && q.meta?.lastDate && c.lastDate > q.meta.lastDate)) continue;
+    lanes.winback_bump.push({ email: lower(q.email), quiet: 5, build: async () => {
+      const t = await gmail();
+      if (!t || !q.gmail_thread_id || (await threadHasMessageFrom(t, q.gmail_thread_id, q.email))) return null;
+      const m = T.winbackBump(q.meta?.greeting || "Hi", q.subject);
+      return { ...base, lane: "winback_bump", step: 2, email: lower(q.email), name: q.name, business: q.business, subject: m.subject, text: m.text, dedupe_key: key, reply_to_queue_id: q.id, qb_customer_id: q.qb_customer_id, meta: { threadId: q.gmail_thread_id, inReplyTo: q.message_id_header, lastDate: q.meta?.lastDate } };
+    } });
+  }
+
+  // ── cold follow-up: the single bump, 6–21 days after the first letter ──
+  for (const p of prospects.filter((p) => p.status === "emailed" && p.touch_count === 1 && p.last_contacted_at).sort((a, b) => a.last_contacted_at.localeCompare(b.last_contacted_at))) {
+    const e = lower(p.email), a = age(p.last_contacted_at);
+    if (a < 6 || a > 21) continue;
+    const key = `cold:${e}:2`;
+    if (usedKeys.has(key)) continue;
+    lanes.cold_bump.push({ email: e, quiet: 5, build: async () => {
+      const t = await gmail();
+      if (!t) return null;
+      const orig = await latestSentTo(t, e, 45);
+      if (!orig || (await threadHasMessageFrom(t, orig.threadId, e))) return null;
+      // Reuse the exact greeting the first letter opened with.
+      const g = (orig.snippet.match(/^(.{2,60}?,)\s/) || [])[1] || (p.name ? `Hi ${String(p.name).split(" ")[0]},` : "Hello,");
+      const m = T.coldBump(p.type === "club" ? "club" : "chiro", g, orig.h.subject || "Active 10");
+      return { ...base, lane: "cold_bump", step: 2, email: e, name: p.name, business: p.business, subject: m.subject, text: m.text, dedupe_key: key, prospect_id: p.id, meta: { threadId: orig.threadId, inReplyTo: orig.h["message-id"] || null, greeting: g } };
+    } });
+  }
+
+  // ── win-back: lapsed 4 months to 6 years, most recently lapsed first ──
+  const lapsed = contacts
+    .filter((c) => c.lastDate && c.spent > 0 && c.spent < HOUSE_ACCOUNT)
+    .map((c) => ({ c, d: age(c.lastDate!) }))
+    .filter(({ c, d }) => d >= (c.orders >= 2 ? 150 : 120) && d <= 6 * 365)
+    .sort((a, b) => Math.floor(a.d / 365) - Math.floor(b.d / 365) || b.c.spent - a.c.spent);
+  for (const { c, d } of lapsed) {
+    const key = `winback:${c.email}:${c.lastDate}:1`;
+    if (usedKeys.has(key)) continue;
+    lanes.winback.push({ email: c.email, quiet: 21, build: async () => {
+      const g = greetingFor(c.display, c.given, c.family, c.company);
+      const m = T.winback(g, { lastDate: c.lastDate!, portal: portalEmails.has(c.email) });
+      return { ...base, lane: "winback", step: 1, email: c.email, name: c.display, business: c.company, subject: m.subject, text: m.text, dedupe_key: key, qb_customer_id: c.qbId, meta: { greeting: g, lastDate: c.lastDate, days: d, spent: c.spent, orders: c.orders } };
+    } });
+  }
+
+  // ── cold first touch: chiropractors (work domains first), then DCA clubs ──
+  const workFirst = (a: any, b: any) =>
+    (FREE_MAIL.has(domainOf(lower(a.email))) ? 1 : 0) - (FREE_MAIL.has(domainOf(lower(b.email))) ? 1 : 0) || String(a.created_at).localeCompare(String(b.created_at));
+  for (const p of prospects.filter((p) => p.type === "chiropractor" && p.status === "prospected" && p.email).sort(workFirst)) {
+    const e = lower(p.email), business = cleanBusiness(p.business);
+    const key = `chiro:${e}:1`;
+    if (!business || isCustomer(e) || usedKeys.has(key)) continue;
+    lanes.chiro.push({ email: e, quiet: 60, build: async () => {
+      const g = p.name && /^Dr\.?\s+[A-Za-z' -]{2,25}$/.test(p.name) ? `${String(p.name).replace(/^Dr\.?\s+/, "Dr. ")},` : `Hi ${business} team,`;
+      const m = T.chiroFirst(g, business);
+      return { ...base, lane: "chiro", step: 1, email: e, name: p.name, business, subject: m.subject, text: m.text, dedupe_key: key, prospect_id: p.id, meta: { greeting: g } };
+    } });
+  }
+  for (const p of prospects.filter((p) => p.type === "club" && p.status === "prospected" && p.email).sort(workFirst)) {
+    const e = lower(p.email);
+    const key = `club:${e}:1`;
+    if (isCustomer(e) || usedKeys.has(key) || /sleepy hollow/i.test(p.business || "")) continue;
+    lanes.club.push({ email: e, quiet: 60, build: async () => {
+      const m = T.clubFirst(p.name, p.business);
+      return { ...base, lane: "club", step: 1, email: e, name: p.name, business: p.business, subject: m.subject, text: m.text, dedupe_key: key, prospect_id: p.id, meta: {} };
+    } });
+  }
+
+  // ── fill: each lane up to its cap in priority order, then overflow ──
+  const chosen: Cand[] = [];
+  const counts: Record<string, number> = {};
+  const take = async (lane: Lane, limit: number) => {
+    for (const pre of lanes[lane]) {
+      if (chosen.length >= cap || (counts[lane] || 0) >= limit) return;
+      if (pre.used || blocked(pre.email, pre.quiet)) continue;
+      pre.used = true;
+      let c: Cand | null = null;
+      try { c = await pre.build(); } catch (e: any) { notes.push(`${lane} ${pre.email}: ${String(e.message).slice(0, 120)}`); }
+      if (!c) continue;
+      taken.add(pre.email);
+      chosen.push(c);
+      counts[lane] = (counts[lane] || 0) + 1;
+    }
+  };
+  for (const l of LANE_ORDER) await take(l, caps[l]);
+  for (const l of OVERFLOW_ORDER) if (chosen.length < cap) await take(l, cap);
+
+  const pools: Record<string, number> = {};
+  for (const l of LANE_ORDER) pools[l] = lanes[l].filter((p) => !p.used && !blocked(p.email, p.quiet)).length;
+
+  // ── schedule: interleave lanes, spread across the send window ──
+  const buckets = LANE_ORDER.map((l) => chosen.filter((c) => c.lane === l));
+  const ordered: Cand[] = [];
+  while (ordered.length < chosen.length) for (const b of buckets) if (b.length) ordered.push(b.shift()!);
+  const span = s.window_end - s.window_start;
+  const step = span / Math.max(1, ordered.length);
+  const rows: PlanRow[] = ordered.map((c, i) => {
+    const minute = Math.round(s.window_start + i * step + Math.random() * step * 0.6);
+    const body_text = withFooter(c.text, s.footer_address);
+    const { text: _t, ...rest } = c;
+    return { ...rest, plan_date: date, send_at: ptToUtc(date, minute).toISOString(), body_text, body_html: toHtml(body_text) };
+  });
+
+  if (!dry) {
+    if (rows.length) {
+      const { error } = await sb.from("growth_queue").insert(rows);
+      if (error) for (const r of rows) { const { error: e1 } = await sb.from("growth_queue").insert(r); if (e1) notes.push(`queue ${r.email}: ${e1.message}`); }
+    }
+    await sb.from("growth_settings").update({ last_plan_date: date, updated_at: new Date().toISOString() }).eq("id", "default");
+  }
+  return { date, rows, counts, pools, notes };
+}

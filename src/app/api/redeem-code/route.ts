@@ -14,6 +14,9 @@ const PROMO_CODES: Record<string, { discount: number; freeShipping: boolean; exp
   // Friday July 17 (midnight Pacific) after the July 14-15 portal outage
   // blocked customers mid-order.
   FIREWORKS: { discount: 0.2, freeShipping: false, expires: "2026-07-18T07:00:00Z", oncePerCustomer: false },
+  // Growth engine win-back offer (src/lib/growth/templates.ts) — 20% off one
+  // comeback order, same terms as FIREWORKS. Only mailed to lapsed accounts.
+  WELCOMEBACK: { discount: 0.2, freeShipping: false, oncePerCustomer: true },
 };
 
 // A customer has used a code if any prior order carries the marker. We write
