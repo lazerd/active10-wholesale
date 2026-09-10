@@ -27,7 +27,7 @@ export async function listIds(token: string, q: string, max = 100): Promise<stri
 export type Meta = { id: string; threadId: string; snippet: string; at: string; h: Record<string, string> };
 
 export async function getMeta(token: string, id: string): Promise<Meta> {
-  const hs = ["From", "To", "Subject", "Message-ID", "Date"].map((h) => `metadataHeaders=${h}`).join("&");
+  const hs = ["From", "To", "Subject", "Message-ID", "Date", "List-Unsubscribe", "Precedence", "Auto-Submitted"].map((h) => `metadataHeaders=${h}`).join("&");
   const j = await gget(token, `/messages/${id}?format=metadata&${hs}`);
   const h: Record<string, string> = {};
   for (const x of j.payload?.headers || []) h[x.name.toLowerCase()] = x.value;

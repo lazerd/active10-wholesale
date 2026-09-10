@@ -46,6 +46,9 @@ export async function scanInbox(sb: SupabaseClient, token: string, s: Settings) 
     const subj = m.h.subject || "";
     if (!from || OURS.test(from)) continue;
 
+    // "Delivery delayed, will retry" is not a bounce. A real failure follows if it fails.
+    if (/\(delay\)|delayed|will (retry|keep trying)/i.test(subj)) continue;
+
     // Bounces: suppress the address we tried, forever.
     if (/mailer-daemon|postmaster/i.test(from) || BOUNCE_SUBJ.test(subj)) {
       const text = await getText(token, id).catch(() => m.snippet);
@@ -65,7 +68,9 @@ export async function scanInbox(sb: SupabaseClient, token: string, s: Settings) 
       }
       continue;
     }
-    if (AUTOMATED.test(from)) continue;
+    // Newsletters, social notifications, receipts: bulk mail always carries one
+    // of these headers; a person hitting Reply never does.
+    if (AUTOMATED.test(from) || m.h["list-unsubscribe"] || /bulk|list|junk/i.test(m.h.precedence || "") || /auto-/i.test(m.h["auto-submitted"] || "")) continue;
 
     // A human wrote in.
     const words = ownWords(m.snippet);

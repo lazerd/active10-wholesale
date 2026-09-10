@@ -5,7 +5,7 @@ import { planDay } from "@/lib/growth/planner";
 // send path uses, writes nothing. GET /api/growth/plan?date=YYYY-MM-DD
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function GET(req: NextRequest) {
   const auth = req.headers.get("authorization") || "";

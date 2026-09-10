@@ -43,6 +43,8 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
   }
 
   const notes: string[] = [];
+  const t0 = Date.now();
+  const mark = (label: string) => notes.push(`${label} @${((Date.now() - t0) / 1000).toFixed(1)}s`);
   const caps: Record<Lane, number> = { ...DEFAULT_CAPS, ...(s.lane_caps || {}) } as Record<Lane, number>;
   const cap = s.daily_cap;
   const ref = ptToUtc(date, 12 * 60).getTime();
@@ -71,8 +73,10 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
   const blocked = (e: string, quiet: number) =>
     !e || isInternal(e) || suppressed.has(e) || spoke.has(e) || taken.has(e) || quietDays(e) < quiet;
 
+  mark("db loaded");
   let contacts: Contact[] = [];
   try { contacts = await loadQbContacts(); } catch (e: any) { notes.push("QuickBooks unavailable, customer lanes skipped: " + e.message); }
+  mark(`quickbooks loaded (${contacts.length} contacts)`);
   const byEmail = new Map(contacts.map((c) => [c.email, c]));
   const portalEmails = new Set(portal.map((c) => lower(c.email)).filter(Boolean));
   const customerEmails = new Set<string>([...Array.from(portalEmails), ...contacts.filter((c) => c.orders > 0).map((c) => c.email)]);
@@ -203,8 +207,9 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
       counts[lane] = (counts[lane] || 0) + 1;
     }
   };
-  for (const l of LANE_ORDER) await take(l, caps[l]);
+  for (const l of LANE_ORDER) { await take(l, caps[l]); mark(`lane ${l}`); }
   for (const l of OVERFLOW_ORDER) if (chosen.length < cap) await take(l, cap);
+  mark("filled");
 
   const pools: Record<string, number> = {};
   for (const l of LANE_ORDER) pools[l] = lanes[l].filter((p) => !p.used && !blocked(p.email, p.quiet)).length;

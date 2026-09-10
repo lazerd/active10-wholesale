@@ -6,7 +6,7 @@ import { tick } from "@/lib/growth/tick";
 // as a backup. Safe to call any time: it only sends what is due.
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 function authorized(req: NextRequest) {
   const auth = req.headers.get("authorization") || "";
