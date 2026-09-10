@@ -1,6 +1,6 @@
 import {
   db, loadSettings, fetchAll, ptParts, ptToUtc, isWeekendDate, isInternal, greetingFor, withFooter, toHtml,
-  FREE_MAIL, DAY_MS, LANE_ORDER, OVERFLOW_ORDER, DEFAULT_CAPS, Lane,
+  FREE_MAIL, DAY_MS, LANE_ORDER, OVERFLOW_ORDER, DEFAULT_CAPS, Lane, fixMojibake, looksWholesale, shortGreeting,
 } from "./config";
 import { loadQbContacts, lastOrderSummary, Contact } from "./qb";
 import * as T from "./templates";
@@ -23,10 +23,13 @@ export type PlanResult = {
 const HOUSE_ACCOUNT = 10000;
 const lower = (s?: string | null) => (s || "").trim().toLowerCase();
 const domainOf = (e: string) => e.split("@")[1] || "";
+/** A real practice name, not a domain or a page title ("X | Walk-In Care Near You"). */
 const cleanBusiness = (b?: string | null) => {
   const s = (b || "").replace(/\s+/g, " ").trim();
-  return !s || /\.(com|net|org|biz|us)\b/i.test(s) || s.length > 60 ? null : s;
+  return !s || s.length > 45 || /\.(com|net|org|biz|us)\b|[|–—]|\s-\s|near you|walk-in|\bbest\b|\btop \d/i.test(s) ? null : s;
 };
+/** Franchise head offices — a cold letter to corporate reaches no one who stocks a front desk. */
+const FRANCHISE = /@(thejoint\.com|100percentchiropractic\.com|atipt\.com|hsschiropractic\.com|chirofusion\.com)$/i;
 
 export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): Promise<PlanResult> {
   const sb = db();
@@ -52,14 +55,17 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
 
   if (!dry) await sb.from("growth_queue").update({ status: "skipped", skip_reason: "not sent on its day" }).eq("status", "planned").lt("plan_date", date);
 
-  const [sup, events, queue, portal, prospects, samples] = await Promise.all([
+  const [sup, events, queue, portal, prospects, samples, products] = await Promise.all([
     fetchAll<any>(() => sb.from("growth_suppression").select("email")),
     fetchAll<any>(() => sb.from("growth_events").select("email, kind, at").gte("at", new Date(ref - 60 * DAY_MS).toISOString())),
     fetchAll<any>(() => sb.from("growth_queue").select("id, email, lane, step, status, dedupe_key, sent_at, subject, gmail_thread_id, message_id_header, meta, name, business, qb_customer_id").in("status", ["planned", "sending", "sent"])),
     fetchAll<any>(() => sb.from("customers").select("email")),
     fetchAll<any>(() => sb.from("outreach_prospects").select("id, name, business, email, type, source, status, touch_count, last_contacted_at, created_at").in("type", ["chiropractor", "club"])),
     fetchAll<any>(() => sb.from("sample_requests").select("*")),
+    fetchAll<any>(() => sb.from("products").select("name, qb_sku")),
   ]);
+  const skuNames: Record<string, string> = {};
+  for (const p of products) if (p.qb_sku) skuNames[String(p.qb_sku).toLowerCase()] = p.name;
 
   const suppressed = new Set(sup.map((r) => lower(r.email)));
   const spoke = new Set(events.filter((e) => ["reply", "unsubscribe", "bounce"].includes(e.kind)).map((e) => lower(e.email)));
@@ -106,7 +112,7 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
   }
 
   // ── restock: past their own reorder cadence, not yet lapsed ──
-  for (const c of contacts.filter((c) => c.lastDate && c.orders >= 2 && c.gapDays && c.spent < HOUSE_ACCOUNT).sort((a, b) => b.spent - a.spent)) {
+  for (const c of contacts.filter((c) => c.lastDate && c.orders >= 2 && c.gapDays && c.spent < HOUSE_ACCOUNT && looksWholesale(c)).sort((a, b) => b.spent - a.spent)) {
     const d = age(c.lastDate!);
     const due = Math.max(45, Math.round(c.gapDays! * 1.15));
     if (d < due || d >= 150) continue;
@@ -114,7 +120,7 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
     if (usedKeys.has(key)) continue;
     lanes.restock.push({ email: c.email, quiet: 21, build: async () => {
       const g = greetingFor(c.display, c.given, c.family, c.company);
-      const m = T.restock(g, { lastDate: c.lastDate!, days: d, gapDays: c.gapDays!, lastOrder: await lastOrderSummary(c.qbId), portal: portalEmails.has(c.email) });
+      const m = T.restock(g, { lastDate: c.lastDate!, days: d, gapDays: c.gapDays!, lastOrder: await lastOrderSummary(c.qbId, skuNames), portal: portalEmails.has(c.email) });
       return { ...base, lane: "restock", step: 1, email: c.email, name: c.display, business: c.company, subject: m.subject, text: m.text, dedupe_key: key, qb_customer_id: c.qbId, meta: { greeting: g, lastDate: c.lastDate, days: d, gap: c.gapDays, spent: c.spent } };
     } });
   }
@@ -147,14 +153,19 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
       if (!orig || (await threadHasMessageFrom(t, orig.threadId, e))) return null;
       // Reuse the exact greeting the first letter opened with.
       const g = (orig.snippet.match(/^(.{2,60}?,)\s/) || [])[1] || (p.name ? `Hi ${String(p.name).split(" ")[0]},` : "Hello,");
-      const m = T.coldBump(p.type === "club" ? "club" : "chiro", g, orig.h.subject || "Active 10");
-      return { ...base, lane: "cold_bump", step: 2, email: e, name: p.name, business: p.business, subject: m.subject, text: m.text, dedupe_key: key, prospect_id: p.id, meta: { threadId: orig.threadId, inReplyTo: orig.h["message-id"] || null, greeting: g } };
+      // A garbled original subject gets a clean one; Gmail only threads on an
+      // exact subject match, so that bump starts a fresh thread on our side
+      // (In-Reply-To still threads it for the recipient).
+      const raw = orig.h.subject || "Active 10";
+      const subject = fixMojibake(raw);
+      const m = T.coldBump(p.type === "club" ? "club" : "chiro", g, subject);
+      return { ...base, lane: "cold_bump", step: 2, email: e, name: cleanBusiness(p.business) || shortGreeting(g), business: p.business, subject: m.subject, text: m.text, dedupe_key: key, prospect_id: p.id, meta: { threadId: orig.threadId, newThread: subject !== raw, inReplyTo: orig.h["message-id"] || null, greeting: g } };
     } });
   }
 
   // ── win-back: lapsed 4 months to 6 years, most recently lapsed first ──
   const lapsed = contacts
-    .filter((c) => c.lastDate && c.spent > 0 && c.spent < HOUSE_ACCOUNT)
+    .filter((c) => c.lastDate && c.spent > 0 && c.spent < HOUSE_ACCOUNT && looksWholesale(c))
     .map((c) => ({ c, d: age(c.lastDate!) }))
     .filter(({ c, d }) => d >= (c.orders >= 2 ? 150 : 120) && d <= 6 * 365)
     .sort((a, b) => Math.floor(a.d / 365) - Math.floor(b.d / 365) || b.c.spent - a.c.spent);
@@ -174,7 +185,7 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
   for (const p of prospects.filter((p) => p.type === "chiropractor" && p.status === "prospected" && p.email).sort(workFirst)) {
     const e = lower(p.email), business = cleanBusiness(p.business);
     const key = `chiro:${e}:1`;
-    if (!business || isCustomer(e) || usedKeys.has(key)) continue;
+    if (!business || isCustomer(e) || FRANCHISE.test(e) || usedKeys.has(key)) continue;
     lanes.chiro.push({ email: e, quiet: 60, build: async () => {
       const g = p.name && /^Dr\.?\s+[A-Za-z' -]{2,25}$/.test(p.name) ? `${String(p.name).replace(/^Dr\.?\s+/, "Dr. ")},` : `Hi ${business} team,`;
       const m = T.chiroFirst(g, business);

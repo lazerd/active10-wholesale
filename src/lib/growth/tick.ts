@@ -79,7 +79,7 @@ async function sendDue(sb: SupabaseClient, token: string, max: number) {
         continue;
       }
 
-      const r = await sendMail(token, { to: row.email, subject: row.subject, text: row.body_text, html: row.body_html, threadId, inReplyTo: row.meta?.inReplyTo || null });
+      const r = await sendMail(token, { to: row.email, subject: row.subject, text: row.body_text, html: row.body_html, threadId: row.meta?.newThread ? null : threadId, inReplyTo: row.meta?.inReplyTo || null });
       const now = new Date().toISOString();
       await sb.from("growth_queue").update({ status: "sent", sent_at: now, gmail_id: r.id, gmail_thread_id: r.threadId, message_id_header: r.messageId }).eq("id", row.id);
       await sb.from("growth_events").insert({ email: e, kind: "contacted", gmail_id: r.id, meta: { lane: row.lane } });

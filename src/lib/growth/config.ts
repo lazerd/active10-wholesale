@@ -119,10 +119,25 @@ export function greetingFor(display?: string | null, given?: string | null, fami
     const toks = d.split(" ");
     if (toks.length >= 2 && toks.length <= 3 && toks.every((t) => /^[A-Za-z'.-]+$/.test(t)) && toks[0].length > 1) return `Hi ${tidy(toks[0])},`;
   }
-  const biz = (company || d).replace(/\s+/g, " ").trim();
+  let biz = (company || d).replace(/\s+/g, " ").trim();
+  if (biz === biz.toUpperCase()) biz = biz.split(" ").map(tidy).join(" "); // "BODY RESTORATIVE CLINIC"
   if (biz && biz.length <= 60) return `Hi ${biz.replace(/\s+team$/i, "")} team,`;
   return "Hello,";
 }
+
+/**
+ * The first nine chiro letters (9/8) left with a double-encoded em dash —
+ * "Active 10 Ã¢Â€Â” samples for …". Put the dash back.
+ */
+export const fixMojibake = (s: string) => s.replace(/ (?=\S*[ÃÂ])\S{2,14} /g, " — ");
+
+/**
+ * Wholesale accounts only. Retail getactive10.com shoppers live in QuickBooks
+ * too (some with 20+ orders) but a "reply and I'll invoice you" letter is the
+ * wrong offer for them — they get a retail lane once there's a retail code.
+ */
+export const looksWholesale = (c: { spent: number; company: string | null; display: string; retail?: boolean }) =>
+  !c.retail && (c.spent >= 150 || !!c.company || /^dr\.?\s|\bd\.?c\.?\b|chiro|clinic|therap|wellness|spine|rehab|club|tennis|gym|fitness|studio|sport|massage|medical|health/i.test(c.display));
 
 /** Short name for bumps: "Dr. Smith" / "Jen" / "Carson Chiropractic team". */
 export const shortGreeting = (greeting: string) => greeting.replace(/^Hi\s+/, "").replace(/,$/, "");
