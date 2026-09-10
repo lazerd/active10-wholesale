@@ -35,7 +35,15 @@ export type Settings = {
   start_date: string | null; paused_on: string | null; window_start: number; window_end: number;
   footer_address: string | null; digest_to: string; city_cursor: number;
   last_plan_date: string | null; last_inbox_scan: string | null; last_error: string | null;
+  require_approval: boolean;
 };
+
+/** The next Monday–Friday after `date` (YYYY-MM-DD). */
+export function nextWeekday(date: string): string {
+  const d = new Date(`${date}T12:00:00Z`);
+  do d.setUTCDate(d.getUTCDate() + 1); while (d.getUTCDay() === 0 || d.getUTCDay() === 6);
+  return d.toISOString().slice(0, 10);
+}
 
 export async function loadSettings(sb: SupabaseClient): Promise<Settings> {
   const { data, error } = await sb.from("growth_settings").select("*").eq("id", "default").single();
@@ -164,6 +172,9 @@ export function toHtml(text: string) {
 export function sign(payload: string) {
   return crypto.createHmac("sha256", process.env.GROWTH_SECRET || "unset").update(payload).digest("hex").slice(0, 24);
 }
+
+/** The key in Darrin's /swipe link. Rotating GROWTH_SECRET rotates it. */
+export const deckKey = () => sign("deck:v1");
 
 export const monthYear = (iso: string) =>
   new Date(iso + (iso.length === 10 ? "T12:00:00Z" : "")).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });

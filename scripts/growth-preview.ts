@@ -10,8 +10,11 @@ import { planDay } from "../src/lib/growth/planner";
 
 const date = process.argv[2];
 const jsonAt = process.argv.indexOf("--json");
+// --commit writes the batch into growth_queue (i.e. fills the /swipe deck) instead of previewing.
+const commit = process.argv.includes("--commit");
 
-planDay({ date, dryRun: true }).then((r) => {
+planDay({ date, dryRun: !commit }).then((r) => {
+  if (r.skipped) console.log("skipped:", r.skipped);
   console.log("counts", r.counts);
   console.log("pools ", r.pools);
   for (const n of r.notes) console.log("  ·", n);

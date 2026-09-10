@@ -42,7 +42,7 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
     if (s.start_date && date < s.start_date) return empty(`starts ${s.start_date}`);
     if (s.paused_on === date) return empty("paused today");
     if (isWeekendDate(date)) return empty("weekend");
-    if (s.last_plan_date === date) return empty("already planned");
+    if (s.last_plan_date && s.last_plan_date >= date) return empty("already planned");
   }
 
   const notes: string[] = [];
@@ -53,12 +53,14 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
   const ref = ptToUtc(date, 12 * 60).getTime();
   const age = (iso: string) => Math.floor((ref - Date.parse(iso.length === 10 ? iso + "T12:00:00Z" : iso)) / DAY_MS);
 
-  if (!dry) await sb.from("growth_queue").update({ status: "skipped", skip_reason: "not sent on its day" }).eq("status", "planned").lt("plan_date", date);
+  // Expire what didn't go out on its own day — relative to TODAY, not the plan
+  // date: tomorrow's batch is planned at 4pm while today's may still be sending.
+  if (!dry) await sb.from("growth_queue").update({ status: "skipped", skip_reason: "not sent on its day" }).eq("status", "planned").lt("plan_date", ptParts().date);
 
   const [sup, events, queue, portal, prospects, samples, products] = await Promise.all([
     fetchAll<any>(() => sb.from("growth_suppression").select("email")),
     fetchAll<any>(() => sb.from("growth_events").select("email, kind, at").gte("at", new Date(ref - 60 * DAY_MS).toISOString())),
-    fetchAll<any>(() => sb.from("growth_queue").select("id, email, lane, step, status, dedupe_key, sent_at, subject, gmail_thread_id, message_id_header, meta, name, business, qb_customer_id").in("status", ["planned", "sending", "sent"])),
+    fetchAll<any>(() => sb.from("growth_queue").select("id, email, lane, step, status, dedupe_key, sent_at, subject, gmail_thread_id, message_id_header, meta, name, business, qb_customer_id").in("status", ["planned", "sending", "sent", "rejected"])),
     fetchAll<any>(() => sb.from("customers").select("email")),
     fetchAll<any>(() => sb.from("outreach_prospects").select("id, name, business, email, type, source, status, touch_count, last_contacted_at, created_at").in("type", ["chiropractor", "club"])),
     fetchAll<any>(() => sb.from("sample_requests").select("*")),
@@ -74,7 +76,8 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
   for (const e of events) if (e.kind === "contacted") touch(e.email, e.at);
   for (const q of queue) if (q.status === "sent" && q.sent_at) touch(q.email, q.sent_at);
   const usedKeys = new Set(queue.map((q) => q.dedupe_key));
-  const taken = new Set<string>();
+  // Anyone already waiting in a deck (today's or tomorrow's) is not planned twice.
+  const taken = new Set<string>(queue.filter((q) => q.status === "planned" || q.status === "sending").map((q) => lower(q.email)));
   const quietDays = (e: string) => (lastContact.has(e) ? (ref - lastContact.get(e)!) / DAY_MS : Infinity);
   const blocked = (e: string, quiet: number) =>
     !e || isInternal(e) || suppressed.has(e) || spoke.has(e) || taken.has(e) || quietDays(e) < quiet;

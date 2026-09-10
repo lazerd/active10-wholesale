@@ -1,5 +1,5 @@
 import { SupabaseClient } from "@supabase/supabase-js";
-import { db, loadSettings, ptParts, isInternal } from "./config";
+import { db, loadSettings, ptParts, isInternal, nextWeekday } from "./config";
 import { getGmailAccess } from "@/lib/gmail";
 import { sendMail, sentCount, threadHasMessageFrom } from "./gmailx";
 import { scanInbox } from "./inbox";
@@ -10,8 +10,9 @@ import { discover } from "./discover";
 /**
  * One heartbeat (pg_cron hits /api/growth/tick every 10 minutes):
  *   1. read the inbox — replies/bounces/"no thanks" cancel what's planned
- *   2. first tick after 6am PT on a weekday: plan the day + email the digest
- *   3. otherwise send whatever is due, two at most, each re-checked first
+ *   2. from 4pm PT: plan the NEXT weekday's batch and email the swipe link, so
+ *      the deck can be swiped the evening before (6am same-day is the fallback)
+ *   3. send whatever is due AND swiped right, two at most, each re-checked first
  *   4. spare time: find more chiropractors
  */
 export async function tick() {
@@ -30,19 +31,22 @@ export async function tick() {
     try { out.inbox = await scanInbox(sb, token, s); } catch (e: any) { out.inbox = { error: e.message }; }
   }
 
-  const live = s.enabled && (!s.start_date || pt.date >= s.start_date) && s.paused_on !== pt.date && pt.weekday !== "Sat" && pt.weekday !== "Sun";
-  out.live = live;
-
-  if (live && s.last_plan_date !== pt.date && pt.minutes >= 6 * 60) {
-    const plan = await planDay({});
+  const weekday = pt.weekday !== "Sat" && pt.weekday !== "Sun";
+  const target = pt.minutes >= 16 * 60 || !weekday ? nextWeekday(pt.date) : pt.date;
+  if (s.enabled && (!s.last_plan_date || s.last_plan_date < target) && (pt.minutes >= 6 * 60 || !weekday)) {
+    const plan = await planDay({ date: target });
     out.plan = { date: plan.date, skipped: plan.skipped, counts: plan.counts, pools: plan.pools, notes: plan.notes };
     if (!plan.skipped) {
       try { await sendDigest(sb, await loadSettings(sb), plan); } catch (e: any) { out.digestError = e.message; }
+      return out; // planning used this tick's budget
     }
-    return out;
   }
 
-  if (live && token && pt.minutes >= s.window_start - 5 && pt.minutes <= s.window_end + 90) out.sent = await sendDue(sb, token, 2);
+  const live = s.enabled && (!s.start_date || pt.date >= s.start_date) && s.paused_on !== pt.date && weekday;
+  out.live = live;
+  if (live && token && pt.minutes >= s.window_start - 5 && pt.minutes <= s.window_end + 90) {
+    out.sent = await sendDue(sb, token, 2, s.require_approval !== false);
+  }
 
   if (Date.now() - t0 < 20000) {
     try { out.discover = await discover(sb, s, t0 + 45000); } catch (e: any) { out.discover = { error: e.message }; }
@@ -50,8 +54,10 @@ export async function tick() {
   return out;
 }
 
-async function sendDue(sb: SupabaseClient, token: string, max: number) {
-  const { data: due } = await sb.from("growth_queue").select("*").eq("status", "planned").lte("send_at", new Date().toISOString()).order("send_at").limit(max);
+async function sendDue(sb: SupabaseClient, token: string, max: number, requireApproval: boolean) {
+  let q = sb.from("growth_queue").select("*").eq("status", "planned").lte("send_at", new Date().toISOString());
+  if (requireApproval) q = q.eq("approval", "approved"); // only what Darrin swiped right
+  const { data: due } = await q.order("send_at").limit(max);
   const res: any[] = [];
   for (const row of due || []) {
     // Claim it first — a second overlapping tick then finds nothing to send.
