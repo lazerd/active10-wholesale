@@ -66,7 +66,8 @@ create table if not exists growth_events (
   at       timestamptz not null default now(),
   meta     jsonb not null default '{}'::jsonb
 );
-create unique index if not exists growth_events_gmail on growth_events (gmail_id, kind) where gmail_id is not null;
+-- Not partial: PostgREST upserts can't target a partial index. NULL gmail_ids stay distinct anyway.
+create unique index if not exists growth_events_gmail_kind on growth_events (gmail_id, kind);
 create index if not exists growth_events_email on growth_events (lower(email), kind, at desc);
 
 alter table growth_settings    enable row level security;
