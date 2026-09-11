@@ -1,7 +1,8 @@
 import {
   db, loadSettings, fetchAll, ptParts, ptToUtc, isWeekendDate, isInternal, greetingFor, withFooter, toHtml,
-  FREE_MAIL, DAY_MS, LANE_ORDER, OVERFLOW_ORDER, DEFAULT_CAPS, Lane, fixMojibake, looksWholesale, shortGreeting,
+  FREE_MAIL, DAY_MS, LANE_ORDER, OVERFLOW_ORDER, DEFAULT_CAPS, Lane, fixMojibake, looksWholesale, shortGreeting, monthDay, monthYear,
 } from "./config";
+import { laneStats, adaptCaps, multiplier, renderTemplate, Vars } from "./learning";
 import { loadQbContacts, lastOrderSummary, Contact } from "./qb";
 import * as T from "./templates";
 import { getGmailAccess } from "@/lib/gmail";
@@ -48,7 +49,7 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
   const notes: string[] = [];
   const t0 = Date.now();
   const mark = (label: string) => notes.push(`${label} @${((Date.now() - t0) / 1000).toFixed(1)}s`);
-  const caps: Record<Lane, number> = { ...DEFAULT_CAPS, ...(s.lane_caps || {}) } as Record<Lane, number>;
+  let caps: Record<Lane, number> = { ...DEFAULT_CAPS, ...(s.lane_caps || {}) } as Record<Lane, number>;
   const cap = s.daily_cap;
   const ref = ptToUtc(date, 12 * 60).getTime();
   const age = (iso: string) => Math.floor((ref - Date.parse(iso.length === 10 ? iso + "T12:00:00Z" : iso)) / DAY_MS);
@@ -68,6 +69,21 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
   ]);
   const skuNames: Record<string, string> = {};
   for (const p of products) if (p.qb_sku) skuNames[String(p.qb_sku).toLowerCase()] = p.name;
+
+  // ── learned from swipes: lane volume + Darrin's own wording ──
+  const stats = await laneStats(sb);
+  caps = adaptCaps(caps, stats);
+  const overflow = [...OVERFLOW_ORDER].sort((a, b) => multiplier(stats[b]) - multiplier(stats[a]));
+  const { data: tpls } = await sb.from("growth_templates").select("lane, subject, body");
+  const overrides: Record<string, { subject: string; body: string }> = {};
+  for (const t of tpls || []) overrides[t.lane] = t;
+  /** His template if he's rewritten this lane (and it can be filled for this person), else the built-in. */
+  const finalize = (lane: Lane, m: { subject: string; text: string }, vars: Vars) => {
+    const o = overrides[lane];
+    const r = o ? renderTemplate(o, vars) : null;
+    if (!r) return m;
+    return { subject: lane.endsWith("bump") ? m.subject : r.subject, text: r.text };
+  };
 
   const suppressed = new Set(sup.map((r) => lower(r.email)));
   const spoke = new Set(events.filter((e) => ["reply", "unsubscribe", "bounce"].includes(e.kind)).map((e) => lower(e.email)));
@@ -109,8 +125,9 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
     if (usedKeys.has(key) || (c?.lastDate && c.lastDate >= String(when).slice(0, 10))) continue;
     lanes.sample_followup.push({ email: e, quiet: 5, build: async () => {
       const g = greetingFor(r.name, null, null, r.business);
-      const m = T.sampleFollowup(g);
-      return { ...base, lane: "sample_followup", step: 1, email: e, name: r.name, business: r.business, subject: m.subject, text: m.text, dedupe_key: key, prospect_id: r.prospect_id || null, meta: { greeting: g, sampleAt: when } };
+      const vars: Vars = { greeting: g, business: r.business };
+      const m = finalize("sample_followup", T.sampleFollowup(g), vars);
+      return { ...base, lane: "sample_followup", step: 1, email: e, name: r.name, business: r.business, subject: m.subject, text: m.text, dedupe_key: key, prospect_id: r.prospect_id || null, meta: { greeting: g, sampleAt: when, vars } };
     } });
   }
 
@@ -123,8 +140,10 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
     if (usedKeys.has(key)) continue;
     lanes.restock.push({ email: c.email, quiet: 21, build: async () => {
       const g = greetingFor(c.display, c.given, c.family, c.company);
-      const m = T.restock(g, { lastDate: c.lastDate!, days: d, gapDays: c.gapDays!, lastOrder: await lastOrderSummary(c.qbId, skuNames), portal: portalEmails.has(c.email) });
-      return { ...base, lane: "restock", step: 1, email: c.email, name: c.display, business: c.company, subject: m.subject, text: m.text, dedupe_key: key, qb_customer_id: c.qbId, meta: { greeting: g, lastDate: c.lastDate, days: d, gap: c.gapDays, spent: c.spent } };
+      const lastOrder = await lastOrderSummary(c.qbId, skuNames);
+      const vars: Vars = { greeting: g, business: c.company, last_date: monthDay(c.lastDate!), weeks: `about ${Math.round(d / 7)} weeks`, gap: `every ${c.gapDays} days`, last_order: lastOrder };
+      const m = finalize("restock", T.restock(g, { lastDate: c.lastDate!, days: d, gapDays: c.gapDays!, lastOrder, portal: portalEmails.has(c.email) }), vars);
+      return { ...base, lane: "restock", step: 1, email: c.email, name: c.display, business: c.company, subject: m.subject, text: m.text, dedupe_key: key, qb_customer_id: c.qbId, meta: { greeting: g, lastDate: c.lastDate, days: d, gap: c.gapDays, spent: c.spent, vars } };
     } });
   }
 
@@ -138,8 +157,9 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
     lanes.winback_bump.push({ email: lower(q.email), quiet: 5, build: async () => {
       const t = await gmail();
       if (!t || !q.gmail_thread_id || (await threadHasMessageFrom(t, q.gmail_thread_id, q.email))) return null;
-      const m = T.winbackBump(q.meta?.greeting || "Hi", q.subject);
-      return { ...base, lane: "winback_bump", step: 2, email: lower(q.email), name: q.name, business: q.business, subject: m.subject, text: m.text, dedupe_key: key, reply_to_queue_id: q.id, qb_customer_id: q.qb_customer_id, meta: { threadId: q.gmail_thread_id, inReplyTo: q.message_id_header, lastDate: q.meta?.lastDate } };
+      const vars: Vars = { greeting_short: shortGreeting(q.meta?.greeting || "Hi,") };
+      const m = finalize("winback_bump", T.winbackBump(q.meta?.greeting || "Hi", q.subject), vars);
+      return { ...base, lane: "winback_bump", step: 2, email: lower(q.email), name: q.name, business: q.business, subject: m.subject, text: m.text, dedupe_key: key, reply_to_queue_id: q.id, qb_customer_id: q.qb_customer_id, meta: { threadId: q.gmail_thread_id, inReplyTo: q.message_id_header, lastDate: q.meta?.lastDate, vars } };
     } });
   }
 
@@ -161,8 +181,11 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
       // (In-Reply-To still threads it for the recipient).
       const raw = orig.h.subject || "Active 10";
       const subject = fixMojibake(raw);
-      const m = T.coldBump(p.type === "club" ? "club" : "chiro", g, subject);
-      return { ...base, lane: "cold_bump", step: 2, email: e, name: cleanBusiness(p.business) || shortGreeting(g), business: p.business, subject: m.subject, text: m.text, dedupe_key: key, prospect_id: p.id, meta: { threadId: orig.threadId, newThread: subject !== raw, inReplyTo: orig.h["message-id"] || null, greeting: g } };
+      const vars: Vars = { greeting: g };
+      // Club and chiro bumps differ in voice, so only chiro bumps take his template.
+      const built = T.coldBump(p.type === "club" ? "club" : "chiro", g, subject);
+      const m = p.type === "club" ? built : finalize("cold_bump", built, vars);
+      return { ...base, lane: "cold_bump", step: 2, email: e, name: cleanBusiness(p.business) || shortGreeting(g), business: p.business, subject: m.subject, text: m.text, dedupe_key: key, prospect_id: p.id, meta: { threadId: orig.threadId, newThread: subject !== raw, inReplyTo: orig.h["message-id"] || null, greeting: g, vars } };
     } });
   }
 
@@ -177,8 +200,9 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
     if (usedKeys.has(key)) continue;
     lanes.winback.push({ email: c.email, quiet: 21, build: async () => {
       const g = greetingFor(c.display, c.given, c.family, c.company);
-      const m = T.winback(g, { lastDate: c.lastDate!, portal: portalEmails.has(c.email) });
-      return { ...base, lane: "winback", step: 1, email: c.email, name: c.display, business: c.company, subject: m.subject, text: m.text, dedupe_key: key, qb_customer_id: c.qbId, meta: { greeting: g, lastDate: c.lastDate, days: d, spent: c.spent, orders: c.orders } };
+      const vars: Vars = { greeting: g, business: c.company, last_month_year: monthYear(c.lastDate!) };
+      const m = finalize("winback", T.winback(g, { lastDate: c.lastDate!, portal: portalEmails.has(c.email) }), vars);
+      return { ...base, lane: "winback", step: 1, email: c.email, name: c.display, business: c.company, subject: m.subject, text: m.text, dedupe_key: key, qb_customer_id: c.qbId, meta: { greeting: g, lastDate: c.lastDate, days: d, spent: c.spent, orders: c.orders, vars } };
     } });
   }
 
@@ -191,8 +215,9 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
     if (!business || isCustomer(e) || FRANCHISE.test(e) || usedKeys.has(key)) continue;
     lanes.chiro.push({ email: e, quiet: 60, build: async () => {
       const g = p.name && /^Dr\.?\s+[A-Za-z' -]{2,25}$/.test(p.name) ? `${String(p.name).replace(/^Dr\.?\s+/, "Dr. ")},` : `Hi ${business} team,`;
-      const m = T.chiroFirst(g, business);
-      return { ...base, lane: "chiro", step: 1, email: e, name: p.name, business, subject: m.subject, text: m.text, dedupe_key: key, prospect_id: p.id, meta: { greeting: g } };
+      const vars: Vars = { greeting: g, business };
+      const m = finalize("chiro", T.chiroFirst(g, business), vars);
+      return { ...base, lane: "chiro", step: 1, email: e, name: p.name, business, subject: m.subject, text: m.text, dedupe_key: key, prospect_id: p.id, meta: { greeting: g, vars } };
     } });
   }
   for (const p of prospects.filter((p) => p.type === "club" && p.status === "prospected" && p.email).sort(workFirst)) {
@@ -200,8 +225,10 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
     const key = `club:${e}:1`;
     if (isCustomer(e) || usedKeys.has(key) || /sleepy hollow/i.test(p.business || "")) continue;
     lanes.club.push({ email: e, quiet: 60, build: async () => {
-      const m = T.clubFirst(p.name, p.business);
-      return { ...base, lane: "club", step: 1, email: e, name: p.name, business: p.business, subject: m.subject, text: m.text, dedupe_key: key, prospect_id: p.id, meta: {} };
+      const first = p.name ? String(p.name).split(" ")[0] : null;
+      const vars: Vars = { first_name: first, business: p.business };
+      const m = finalize("club", T.clubFirst(p.name, p.business), vars);
+      return { ...base, lane: "club", step: 1, email: e, name: p.name, business: p.business, subject: m.subject, text: m.text, dedupe_key: key, prospect_id: p.id, meta: { greeting: first ? `Hi ${first},` : null, vars } };
     } });
   }
 
@@ -222,7 +249,7 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
     }
   };
   for (const l of LANE_ORDER) { await take(l, caps[l]); mark(`lane ${l}`); }
-  for (const l of OVERFLOW_ORDER) if (chosen.length < cap) await take(l, cap);
+  for (const l of overflow) if (chosen.length < cap) await take(l, cap);
   mark("filled");
 
   const pools: Record<string, number> = {};

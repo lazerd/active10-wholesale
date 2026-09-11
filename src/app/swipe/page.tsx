@@ -9,7 +9,11 @@ type Card = {
   id: string; lane: string; laneLabel: string; to: string; name: string | null; business: string | null;
   time: string; subject: string; html: string; text: string; why: string;
 };
-type Deck = { date: string | null; dateLabel: string | null; total: number; approved: number; skipped: number; firstSend: string | null; cards: Card[] };
+type Deck = { date: string | null; dateLabel: string | null; total: number; approved: number; skipped: number; firstSend: string | null; learned: string[]; cards: Card[] };
+
+const REASONS: [string, string][] = [
+  ["wrong_person", "Wrong person"], ["greeting", "Bad greeting"], ["offer", "Wrong offer"], ["voice", "Doesn't sound like me"], ["timing", "Not now"],
+];
 type Action = "approve" | "reject" | "never";
 
 const LANE_COLOR: Record<string, string> = {
@@ -27,6 +31,8 @@ export default function SwipePage() {
   const [toast, setToast] = useState<string | null>(null);
   const [editing, setEditing] = useState<Card | null>(null);
   const [fly, setFly] = useState<{ id: string; dir: 1 | -1 } | null>(null);
+  const [askWhy, setAskWhy] = useState<Card | null>(null); // the card just skipped → "why?" chips
+  const whyTimer = useRef<any>(null);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -58,6 +64,9 @@ export default function SwipePage() {
     setTimeout(() => { setCards((cs) => cs.filter((c) => c.id !== card.id)); setFly(null); }, 280);
     setHistory((h) => [...h, { card, action }]);
     setCounts((c) => (good ? { ...c, approved: c.approved + 1 } : { ...c, skipped: c.skipped + 1 }));
+    clearTimeout(whyTimer.current);
+    if (action === "reject") { setAskWhy(card); whyTimer.current = setTimeout(() => setAskWhy(null), 6000); }
+    else setAskWhy(null);
     try {
       await post({ id: card.id, action, ...extra });
     } catch (e: any) {
@@ -79,6 +88,12 @@ export default function SwipePage() {
       setCounts((c) => (good ? { ...c, approved: c.approved - 1 } : { ...c, skipped: c.skipped - 1 }));
     } catch (e: any) { flash(e.message); }
   }, [history, key]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const giveReason = async (reason: string) => {
+    const c = askWhy; setAskWhy(null); clearTimeout(whyTimer.current);
+    if (!c) return;
+    try { await post({ id: c.id, action: "reason", reason }); flash("Got it — I'll learn from that."); } catch (e: any) { flash(e.message); }
+  };
 
   const top = cards[0];
   const never = (c: Card) => { if (confirm(`Never email ${c.name || c.to} again?`)) decide(c, "never"); };
@@ -130,6 +145,12 @@ export default function SwipePage() {
                 <p className="dim">The next batch shows up here at 4pm the day before. You'll get an email.</p>
               </>
             )}
+            {deck.learned?.length > 0 && (
+              <div className="learned">
+                <div className="lt">🧠 What I've learned</div>
+                {deck.learned.map((l, i) => <div key={i} className="li">{l}</div>)}
+              </div>
+            )}
           </div>
         )}
         {cards[1] && <EmailCard key={cards[1].id} card={cards[1]} behind />}
@@ -144,9 +165,16 @@ export default function SwipePage() {
         <button className="b sm" onClick={() => top && never(top)} disabled={!top} aria-label="Never email">🚫</button>
       </footer>
 
-      {editing && <Editor card={editing} onCancel={() => setEditing(null)} onSave={(subject, text) => {
+      {askWhy && (
+        <div className="sw-why">
+          <div className="q">Why skip {askWhy.name || askWhy.to}?</div>
+          <div className="chips">{REASONS.map(([k, label]) => <button key={k} onClick={() => giveReason(k)}>{label}</button>)}</div>
+        </div>
+      )}
+      {editing && <Editor card={editing} onCancel={() => setEditing(null)} onSave={(subject, text, saveTemplate) => {
         const c = editing; setEditing(null);
-        decide({ ...c, subject, text }, "edit", { subject, text });
+        decide({ ...c, subject, text }, "edit", { subject, text, saveTemplate });
+        if (saveTemplate) flash(`Every future ${c.laneLabel.toLowerCase()} email will use your wording.`);
       }} />}
       {toast && <div className="sw-toast">{toast}</div>}
     </div>
@@ -206,9 +234,10 @@ function EmailCard({ card, behind, fly = 0, onSwipe }: { card: Card; behind?: bo
   );
 }
 
-function Editor({ card, onCancel, onSave }: { card: Card; onCancel: () => void; onSave: (subject: string, text: string) => void }) {
+function Editor({ card, onCancel, onSave }: { card: Card; onCancel: () => void; onSave: (subject: string, text: string, saveTemplate: boolean) => void }) {
   const [subject, setSubject] = useState(card.subject);
   const [text, setText] = useState(card.text);
+  const [always, setAlways] = useState(false);
   return (
     <div className="sw-modal">
       <div className="sheet">
@@ -218,9 +247,10 @@ function Editor({ card, onCancel, onSave }: { card: Card; onCancel: () => void; 
         <label>Email</label>
         <textarea value={text} onChange={(e) => setText(e.target.value)} />
         <p className="dim">The "no thanks" line and address are added underneath automatically.</p>
+        <label className="always"><input type="checkbox" checked={always} onChange={(e) => setAlways(e.target.checked)} /> Write every {card.laneLabel.toLowerCase()} email this way from now on</label>
         <div className="row">
           <button className="ghost" onClick={onCancel}>Cancel</button>
-          <button className="go" onClick={() => onSave(subject, text)} disabled={!subject.trim() || !text.trim()}>Save &amp; send ✓</button>
+          <button className="go" onClick={() => onSave(subject, text, always)} disabled={!subject.trim() || !text.trim()}>Save &amp; send ✓</button>
         </div>
       </div>
     </div>
@@ -269,4 +299,12 @@ const CSS = `
 .sheet .row{display:flex;gap:10px;margin-top:10px}
 .sheet button{flex:1;border:none;border-radius:12px;padding:13px;font-size:15px;font-weight:700;cursor:pointer}
 .ghost{background:#f3f4f6;color:#374151}.go{background:#059669;color:#fff}.go:disabled{opacity:.4}
+.sheet .always{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:#111827;margin-top:4px}
+.sheet .always input{width:18px;height:18px;flex:none}
+.sw-why{position:fixed;left:50%;bottom:104px;transform:translateX(-50%);width:min(520px,calc(100vw - 32px));background:#111827;border-radius:14px;padding:10px 12px;z-index:15;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.sw-why .q{font-size:13px;opacity:.8;margin-bottom:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sw-why .chips{display:flex;flex-wrap:wrap;gap:6px}
+.sw-why button{background:#374151;color:#fff;border:none;border-radius:20px;padding:7px 12px;font-size:13px;cursor:pointer}
+.learned{margin-top:18px;background:rgba(255,255,255,.1);border-radius:12px;padding:12px 14px;text-align:left;max-width:420px}
+.learned .lt{font-weight:800;margin-bottom:6px}.learned .li{font-size:13px;line-height:1.45;opacity:.9;margin-top:3px}
 `;

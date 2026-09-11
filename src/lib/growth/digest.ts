@@ -1,5 +1,6 @@
 import { SupabaseClient } from "@supabase/supabase-js";
-import { SITE, LANE_LABEL, Lane, Settings, sign, deckKey, TZ } from "./config";
+import { SITE, LANE_LABEL, Lane, Settings, sign, deckKey, DEFAULT_CAPS } from "./config";
+import { laneStats, learnedLines } from "./learning";
 import type { PlanResult } from "./planner";
 
 const esc = (s: any) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -25,6 +26,12 @@ export async function sendDigest(sb: SupabaseClient, s: Settings, plan: PlanResu
   const bounces = (ev || []).filter((e: any) => e.kind === "bounce").length;
   const unsubs = (ev || []).filter((e: any) => e.kind === "unsubscribe").length;
 
+  const { data: tpls } = await sb.from("growth_templates").select("lane");
+  const learned = learnedLines(await laneStats(sb), { ...DEFAULT_CAPS, ...(s.lane_caps || {}) } as Record<Lane, number>, (tpls || []).map((t: any) => t.lane));
+  const learnedHtml = learned.length
+    ? `<p style="margin:16px 0 6px"><b>What I've learned from your swipes:</b></p><ul style="margin:0;padding-left:18px">${learned.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>`
+    : "";
+
   const deck = `${SITE}/swipe?k=${deckKey()}`;
   const counts = Object.entries(plan.counts).map(([l, n]) => `${n} ${LANE_LABEL[l as Lane].toLowerCase()}`).join(" · ");
   const link = (a: string, d: string) => `${SITE}/api/growth/pause?a=${a}&d=${d}&s=${sign(`${a}:${d}`)}`;
@@ -42,6 +49,7 @@ ${warn}
 <p style="margin:0 0 14px"><a href="${deck}" style="display:inline-block;background:#0072BC;color:#fff;padding:14px 28px;border-radius:30px;text-decoration:none;font-weight:bold;font-size:16px">Swipe them →</a></p>
 <p style="margin:0;color:#666">Right sends it, left skips it. Nothing goes out until you swipe. Swipe before 8:30am and they go out spread across the day.</p>
 ${replyHtml}
+${learnedHtml}
 <p style="margin:16px 0 0;color:#888;font-size:12px">Last 24h: ${recentSent} sent · ${bounces} bounced · ${unsubs} opted out (3 days) · still queued behind this batch: ${plan.pools.winback ?? 0} lapsed customers, ${plan.pools.chiro ?? 0} chiropractors, ${plan.pools.club ?? 0} clubs.</p>
 <p style="margin:8px 0 0;font-size:12px"><a href="${link("all", "x")}">Pause everything</a> · <a href="${link("resume", "x")}">Resume</a></p>
 </div>`;

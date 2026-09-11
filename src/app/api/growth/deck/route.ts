@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, deckKey, ptParts, LANE_LABEL, Lane, toHtml, TZ } from "@/lib/growth/config";
+import { db, deckKey, ptParts, loadSettings, LANE_LABEL, DEFAULT_CAPS, Lane, toHtml, TZ } from "@/lib/growth/config";
+import { laneStats, learnedLines, generalize } from "@/lib/growth/learning";
 
-// The swipe deck behind /swipe. GET = the cards waiting for a decision;
-// POST = approve / reject / never / edit / undo. Keyed by the signed link in
-// Darrin's digest (deckKey), so it works on his phone without a login.
+// The swipe deck behind /swipe. GET = the cards waiting for a decision + what
+// the engine has learned; POST = approve / reject / reason / never / edit /
+// undo. Keyed by the signed link in Darrin's digest (deckKey), so it works on
+// his phone without a login.
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
 const FOOTER = "\n\n--\n";
+const REASONS = ["wrong_person", "greeting", "offer", "voice", "timing"];
 const authed = (req: NextRequest) => req.nextUrl.searchParams.get("k") === deckKey();
 const dayLabel = (d: string) => new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" });
 const time = (iso: string) => new Date(iso).toLocaleTimeString("en-US", { timeZone: TZ, hour: "numeric", minute: "2-digit" });
@@ -32,9 +35,14 @@ export async function GET(req: NextRequest) {
   if (!authed(req)) return NextResponse.json({ error: "This link isn't valid. Use the Swipe button in your Active 10 email." }, { status: 401 });
   const sb = db();
   const today = ptParts().date;
-  const { data: rows, error } = await sb.from("growth_queue")
-    .select("id, plan_date, send_at, lane, email, name, business, subject, body_text, body_html, meta, approval, status")
-    .gte("plan_date", today).in("status", ["planned", "rejected", "sending", "sent"]).order("send_at");
+  const [{ data: rows, error }, s, stats, { data: tpls }] = await Promise.all([
+    sb.from("growth_queue")
+      .select("id, plan_date, send_at, lane, email, name, business, subject, body_text, body_html, meta, approval, status")
+      .gte("plan_date", today).in("status", ["planned", "rejected", "sending", "sent"]).order("send_at"),
+    loadSettings(sb),
+    laneStats(sb),
+    sb.from("growth_templates").select("lane"),
+  ]);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   const all = rows || [];
   // The soonest day that still has undecided cards; else the latest day (all done).
@@ -42,12 +50,14 @@ export async function GET(req: NextRequest) {
   const date = pending[0]?.plan_date || all[all.length - 1]?.plan_date || null;
   const day = all.filter((r) => r.plan_date === date);
   const firstApproved = day.find((r) => r.approval === "approved" && r.status === "planned");
+  const base = { ...DEFAULT_CAPS, ...(s.lane_caps || {}) } as Record<Lane, number>;
   return NextResponse.json({
     date, dateLabel: date ? dayLabel(date) : null,
     total: day.length,
     approved: day.filter((r) => r.approval === "approved").length,
     skipped: day.filter((r) => r.approval === "rejected" || r.status === "rejected").length,
     firstSend: firstApproved ? time(firstApproved.send_at) : null,
+    learned: learnedLines(stats, base, (tpls || []).map((t: any) => t.lane)),
     cards: day.filter((r) => r.status === "planned" && r.approval === "pending").map((r) => ({
       id: r.id, lane: r.lane, laneLabel: LANE_LABEL[r.lane as Lane] || r.lane, to: r.email, name: r.name, business: r.business,
       time: time(r.send_at), subject: r.subject, html: r.body_html, text: String(r.body_text).split(FOOTER)[0], why: why(r),
@@ -57,10 +67,16 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   if (!authed(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const { id, action, subject, text } = await req.json().catch(() => ({}));
+  const { id, action, subject, text, reason, saveTemplate } = await req.json().catch(() => ({}));
   const sb = db();
   const { data: row } = await sb.from("growth_queue").select("*").eq("id", id).maybeSingle();
   if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  if (action === "reason") {
+    if (!REASONS.includes(reason)) return NextResponse.json({ error: "Unknown reason" }, { status: 400 });
+    await sb.from("growth_queue").update({ reject_reason: reason }).eq("id", id);
+    return NextResponse.json({ ok: true });
+  }
   if (!["planned", "rejected"].includes(row.status)) return NextResponse.json({ error: "Already sent — can't change it now." }, { status: 409 });
 
   const soon = new Date(Date.now() + 60000).toISOString();
@@ -69,21 +85,27 @@ export async function POST(req: NextRequest) {
   if (action === "approve") {
     await sb.from("growth_queue").update({ approval: "approved", status: "planned", send_at: sendAt, skip_reason: null }).eq("id", id);
   } else if (action === "edit") {
+    const body = String(text || "").trim(), subj = String(subject || "").trim();
+    if (!body || !subj) return NextResponse.json({ error: "Subject and body can't be empty." }, { status: 400 });
     const footer = String(row.body_text).includes(FOOTER) ? FOOTER + String(row.body_text).split(FOOTER).slice(1).join(FOOTER) : "";
-    const body_text = String(text || "").trim() + footer;
-    if (!String(text || "").trim() || !String(subject || "").trim()) return NextResponse.json({ error: "Subject and body can't be empty." }, { status: 400 });
+    const body_text = body + footer;
     await sb.from("growth_queue").update({
-      subject: String(subject).trim(), body_text, body_html: toHtml(body_text), meta: { ...(row.meta || {}), edited: true },
+      subject: subj, body_text, body_html: toHtml(body_text), meta: { ...(row.meta || {}), edited: true },
       approval: "approved", status: "planned", send_at: sendAt, skip_reason: null,
     }).eq("id", id);
+    if (saveTemplate) {
+      // His wording becomes the lane's template; this person's specifics become {{placeholders}}.
+      const tpl = generalize(subj, body, row.meta?.vars || { greeting: row.meta?.greeting });
+      await sb.from("growth_templates").upsert({ lane: row.lane, subject: tpl.subject, body: tpl.body, source: `edited on card ${id}`, updated_at: new Date().toISOString() }, { onConflict: "lane" });
+    }
   } else if (action === "reject") {
     await sb.from("growth_queue").update({ approval: "rejected", status: "rejected", skip_reason: "swiped left" }).eq("id", id);
   } else if (action === "never") {
     await sb.from("growth_suppression").upsert({ email: String(row.email).toLowerCase(), reason: "never (swiped)" }, { onConflict: "email" });
-    await sb.from("growth_queue").update({ approval: "rejected", status: "rejected", skip_reason: "never email" }).eq("id", id);
+    await sb.from("growth_queue").update({ approval: "rejected", status: "rejected", skip_reason: "never email", reject_reason: "wrong_person" }).eq("id", id);
   } else if (action === "undo") {
     if (row.skip_reason === "never email") await sb.from("growth_suppression").delete().eq("email", String(row.email).toLowerCase()).eq("reason", "never (swiped)");
-    const { error } = await sb.from("growth_queue").update({ approval: "pending", status: "planned", skip_reason: null }).eq("id", id);
+    const { error } = await sb.from("growth_queue").update({ approval: "pending", status: "planned", skip_reason: null, reject_reason: null }).eq("id", id);
     if (error) return NextResponse.json({ error: "Can't undo — that email was re-planned elsewhere." }, { status: 409 });
   } else {
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
