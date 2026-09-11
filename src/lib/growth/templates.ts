@@ -56,21 +56,21 @@ export function restock(greeting: string, o: { lastDate: string; days: number; g
   };
 }
 
-/** Same offer as the July mailing that produced this summer's orders: 20% off, any size. */
+/** Lapsed wholesale accounts: 15% off one order, any size (Darrin, 9/10/26 — was 20%). */
 export function winback(greeting: string, o: { lastDate: string; portal: boolean }): Mail {
   const online = o.portal
     ? " Or order online at wholesale.getactive10.com with code WELCOMEBACK."
     : "";
   return {
-    subject: "20% off to welcome you back to Active 10",
-    text: `${greeting}\n\nYour last Active 10 order was back in ${monthYear(o.lastDate)}, so I wanted to reach out personally. We're still here, and my cofounder June and I still pack most orders ourselves.\n\nIf you'd like to restock, I'll take 20% off your next order, any size. Easiest way: reply with what you'd like and I'll send you an invoice.${online}\n\nAnd if it's no longer a fit, no hard feelings. A one-line reply telling me why would honestly help.\n\n${SIGN}`,
+    subject: "15% off your next Active 10 order",
+    text: `${greeting}\n\nYour last Active 10 order was back in ${monthYear(o.lastDate)}, so I wanted to reach out personally. We're still here, and my cofounder June and I still pack most orders ourselves.\n\nIf you'd like to restock, I'll take 15% off your next order, any size. Easiest way: reply with what you'd like and I'll send you an invoice.${online}\n\nAnd if it's no longer a fit, no hard feelings. A one-line reply telling me why would honestly help.\n\n${SIGN}`,
   };
 }
 
 export function winbackBump(greeting: string, originalSubject: string): Mail {
   return {
     subject: /^re:/i.test(originalSubject) ? originalSubject : `Re: ${originalSubject}`,
-    text: `${shortGreeting(greeting)}, floating this back up in case it got buried. The 20% off still stands. Just reply with what you need and I'll take care of the rest.\n\nDarrin`,
+    text: `${shortGreeting(greeting)}, floating this back up in case it got buried. The 15% off still stands. Just reply with what you need and I'll take care of the rest.\n\nDarrin`,
   };
 }
 

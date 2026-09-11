@@ -20,7 +20,7 @@ export const LANE_LABEL: Record<Lane, string> = {
   restock: "Restock check-in",
   winback_bump: "Win-back nudge",
   cold_bump: "Cold follow-up",
-  winback: "Win-back (20% off)",
+  winback: "Win-back (15% off)",
   chiro: "Cold chiro letter",
   club: "Cold club letter",
 };

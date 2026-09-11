@@ -22,7 +22,7 @@ function why(r: any): string {
   switch (r.lane) {
     case "restock": return `Last order ${m.lastDate}. Usually reorders every ${m.gap} days. ${money(m.spent)} lifetime.`;
     case "winback": return `No order since ${m.lastDate} (${Math.round((m.days || 0) / 30)} months). ${m.orders} orders, ${money(m.spent)} lifetime.`;
-    case "winback_bump": return "Didn't answer last week's 20%-off email. Replies in the same thread.";
+    case "winback_bump": return "Didn't answer last week's 15%-off email. Replies in the same thread.";
     case "cold_bump": return "Didn't answer the first letter. This is the only follow-up they ever get.";
     case "sample_followup": return `Samples went out ${String(m.sampleAt || "").slice(0, 10)}. No order yet.`;
     case "chiro": return "Practice found online. First letter — they've never heard from us.";
