@@ -1,5 +1,5 @@
 import { SupabaseClient } from "@supabase/supabase-js";
-import { LANE_LABEL, LANE_ORDER, Lane, fetchAll } from "./config";
+import { LANE_LABEL, LANE_ORDER, Lane, fetchAll, ptParts, toHtml } from "./config";
 
 /**
  * What the swipes teach the engine (v1):
@@ -91,6 +91,39 @@ export function generalize(subject: string, text: string, vars: Vars) {
     t = t.split(String(v)).join(`{{${k}}}`);
   }
   return { subject: s, body: t };
+}
+
+/**
+ * A saved rewrite applies to the deck NOW, not just to future batches: every
+ * undecided card in that lane is re-rendered with his wording and that
+ * person's own details. Cards he already swiped are left alone, as is any card
+ * the template can't fill completely. Club bumps keep their own voice.
+ */
+export async function applyTemplateToDeck(sb: SupabaseClient, lane: string, tpl: { subject: string; body: string }, excludeId?: string): Promise<number> {
+  const { data: rows } = await sb.from("growth_queue").select("id, lane, subject, body_text, meta, prospect_id")
+    .eq("lane", lane).eq("status", "planned").eq("approval", "pending").gte("plan_date", ptParts().date);
+  const clubs = new Set<string>();
+  if (lane === "cold_bump") {
+    const ids = (rows || []).map((r) => r.prospect_id).filter(Boolean);
+    if (ids.length) {
+      const { data: ps } = await sb.from("outreach_prospects").select("id, type").in("id", ids);
+      for (const p of ps || []) if (p.type === "club") clubs.add(p.id);
+    }
+  }
+  let n = 0;
+  for (const r of rows || []) {
+    if (r.id === excludeId || clubs.has(r.prospect_id) || !r.meta?.vars) continue;
+    const out = renderTemplate(tpl, r.meta.vars);
+    if (!out) continue;
+    const parts = String(r.body_text).split("\n\n--\n");
+    const body_text = out.text + (parts.length > 1 ? "\n\n--\n" + parts.slice(1).join("\n\n--\n") : "");
+    await sb.from("growth_queue").update({
+      subject: lane.endsWith("bump") ? r.subject : out.subject, body_text, body_html: toHtml(body_text),
+      meta: { ...r.meta, fromTemplate: true },
+    }).eq("id", r.id);
+    n++;
+  }
+  return n;
 }
 
 /** Fill a template for one person. null if any placeholder has no value — the built-in email is used instead. */

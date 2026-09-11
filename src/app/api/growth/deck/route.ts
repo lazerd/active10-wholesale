@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, deckKey, ptParts, loadSettings, LANE_LABEL, DEFAULT_CAPS, Lane, toHtml, TZ } from "@/lib/growth/config";
-import { laneStats, learnedLines, generalize } from "@/lib/growth/learning";
+import { laneStats, learnedLines, generalize, applyTemplateToDeck } from "@/lib/growth/learning";
 
 // The swipe deck behind /swipe. GET = the cards waiting for a decision + what
 // the engine has learned; POST = approve / reject / reason / never / edit /
@@ -97,6 +97,9 @@ export async function POST(req: NextRequest) {
       // His wording becomes the lane's template; this person's specifics become {{placeholders}}.
       const tpl = generalize(subj, body, row.meta?.vars || { greeting: row.meta?.greeting });
       await sb.from("growth_templates").upsert({ lane: row.lane, subject: tpl.subject, body: tpl.body, source: `edited on card ${id}`, updated_at: new Date().toISOString() }, { onConflict: "lane" });
+      // …and rewrite the rest of this lane's undecided cards right now.
+      const updated = await applyTemplateToDeck(sb, row.lane, tpl, id);
+      return NextResponse.json({ ok: true, updated });
     }
   } else if (action === "reject") {
     await sb.from("growth_queue").update({ approval: "rejected", status: "rejected", skip_reason: "swiped left" }).eq("id", id);

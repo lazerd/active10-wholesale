@@ -56,6 +56,7 @@ export default function SwipePage() {
     const r = await fetch(`/api/growth/deck?k=${encodeURIComponent(key!)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || "That didn't save.");
+    return j;
   };
 
   const decide = useCallback(async (card: Card, action: Action | "edit", extra: any = {}) => {
@@ -68,7 +69,7 @@ export default function SwipePage() {
     if (action === "reject") { setAskWhy(card); whyTimer.current = setTimeout(() => setAskWhy(null), 6000); }
     else setAskWhy(null);
     try {
-      await post({ id: card.id, action, ...extra });
+      return await post({ id: card.id, action, ...extra });
     } catch (e: any) {
       flash(e.message);
       setCards((cs) => [card, ...cs.filter((c) => c.id !== card.id)]);
@@ -173,8 +174,13 @@ export default function SwipePage() {
       )}
       {editing && <Editor card={editing} onCancel={() => setEditing(null)} onSave={(subject, text, saveTemplate) => {
         const c = editing; setEditing(null);
-        decide({ ...c, subject, text }, "edit", { subject, text, saveTemplate });
-        if (saveTemplate) flash(`Every future ${c.laneLabel.toLowerCase()} email will use your wording.`);
+        const label = c.laneLabel.toLowerCase();
+        decide({ ...c, subject, text }, "edit", { subject, text, saveTemplate }).then(async (j: any) => {
+          if (!saveTemplate || !j) return;
+          // The server rewrote the rest of this lane's cards — pull them so the next one shows it.
+          await load();
+          flash(j.updated ? `Rewrote ${j.updated} more ${label} card${j.updated === 1 ? "" : "s"} your way.` : `Saved. Every future ${label} email uses your wording.`);
+        });
       }} />}
       {toast && <div className="sw-toast">{toast}</div>}
     </div>
