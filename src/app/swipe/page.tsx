@@ -179,7 +179,8 @@ export default function SwipePage() {
           if (!saveTemplate || !j) return;
           // The server rewrote the rest of this lane's cards — pull them so the next one shows it.
           await load();
-          flash(j.updated ? `Rewrote ${j.updated} more ${label} card${j.updated === 1 ? "" : "s"} your way.` : `Saved. Every future ${label} email uses your wording.`);
+          if (j.templateError) flash(j.templateError);
+          else flash(j.updated ? `Rewrote ${j.updated} more ${label} card${j.updated === 1 ? "" : "s"} your way.` : `Saved. Every future ${label} email uses your wording.`);
         });
       }} />}
       {toast && <div className="sw-toast">{toast}</div>}

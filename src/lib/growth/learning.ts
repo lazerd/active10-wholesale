@@ -126,6 +126,54 @@ export async function applyTemplateToDeck(sb: SupabaseClient, lane: string, tpl:
   return n;
 }
 
+/**
+ * Words that are fine in a template even though they appear in someone's name
+ * or business ("Gym", "Chiropractic", "Active"…). Everything else that belongs
+ * to the person on the card must not survive into the template.
+ */
+const GENERIC = new Set([
+  "the", "and", "you", "your", "active", "darrin", "june", "cohen", "order", "orders", "email", "reply", "free", "sample", "samples",
+  "practice", "team", "doctor", "thanks", "best", "week", "this", "that", "with", "from", "for", "our", "can", "just", "get", "have",
+  "here", "back", "next", "off", "code", "welcomeback", "call", "ship", "wholesale", "getactive10", "founder", "inc", "llc", "com",
+  "gym", "chiropractic", "chiro", "wellness", "clinic", "center", "centre", "health", "sports", "sport", "spine", "rehab", "rehabilitation",
+  "therapy", "physical", "family", "medicine", "medical", "care", "massage", "fitness", "studio", "club", "tennis", "golf", "life", "bodies",
+]);
+
+/**
+ * Keep one person out of everyone else's email. Darrin rewrote Victor's
+ * win-back card including the greeting line, so "Victor," stopped being a
+ * recognized detail and got saved into the template — every other win-back
+ * card then opened "Victor,". So: force a salutation first line back to
+ * {{greeting}}, and refuse to save a template that still names the person.
+ */
+export function sanitizeTemplate(
+  subject: string, body: string,
+  card: { name?: string | null; business?: string | null; email?: string | null; vars?: Vars },
+): { subject: string; body: string; problems: string[] } {
+  const lines = body.split("\n");
+  const first = (lines[0] || "").trim();
+  const isSalutation = first.length > 0 && first.length <= 60 && /[,:—-]$/.test(first);
+  if (isSalutation && !first.includes("{{")) lines[0] = "{{greeting}}";
+  const out = { subject, body: lines.join("\n") };
+
+  const personal = new Set<string>();
+  const add = (s?: string | null) => {
+    for (const w of String(s || "").split(/[^A-Za-z']+/)) {
+      const t = w.toLowerCase().replace(/'s$/, "");
+      if (t.length >= 3 && !GENERIC.has(t)) personal.add(t);
+    }
+  };
+  add(card.name); add(card.business); add(String(card.email || "").split("@")[0]);
+  for (const k of ["greeting", "greeting_short", "business", "first_name", "last_month_year", "last_date", "last_order"]) add(card.vars?.[k] as string);
+
+  const hay = `${out.subject}\n${out.body}`;
+  const found = Array.from(personal).filter((w) => new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(hay));
+  const problems = found.length
+    ? [`it still says "${found.slice(0, 3).join('", "')}" — that's this one person, so it can't become everyone's email`]
+    : [];
+  return { ...out, problems };
+}
+
 /** Fill a template for one person. null if any placeholder has no value — the built-in email is used instead. */
 export function renderTemplate(tpl: { subject: string; body: string }, vars: Vars): { subject: string; text: string } | null {
   let missing = false;

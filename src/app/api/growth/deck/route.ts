@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, deckKey, ptParts, loadSettings, LANE_LABEL, DEFAULT_CAPS, Lane, toHtml, TZ } from "@/lib/growth/config";
-import { laneStats, learnedLines, generalize, applyTemplateToDeck } from "@/lib/growth/learning";
+import { laneStats, learnedLines, generalize, applyTemplateToDeck, sanitizeTemplate } from "@/lib/growth/learning";
 
 // The swipe deck behind /swipe. GET = the cards waiting for a decision + what
 // the engine has learned; POST = approve / reject / reason / never / edit /
@@ -95,7 +95,13 @@ export async function POST(req: NextRequest) {
     }).eq("id", id);
     if (saveTemplate) {
       // His wording becomes the lane's template; this person's specifics become {{placeholders}}.
-      const tpl = generalize(subj, body, row.meta?.vars || { greeting: row.meta?.greeting });
+      const raw = generalize(subj, body, row.meta?.vars || { greeting: row.meta?.greeting });
+      const tpl = sanitizeTemplate(raw.subject, raw.body, { name: row.name, business: row.business, email: row.email, vars: row.meta?.vars });
+      if (tpl.problems.length) {
+        // Their own card still sends as written — but one person's details must
+        // never become the template everyone else gets.
+        return NextResponse.json({ ok: true, updated: 0, templateError: `Sent this one as you wrote it, but I didn't make it the template: ${tpl.problems[0]}.` });
+      }
       await sb.from("growth_templates").upsert({ lane: row.lane, subject: tpl.subject, body: tpl.body, source: `edited on card ${id}`, updated_at: new Date().toISOString() }, { onConflict: "lane" });
       // …and rewrite the rest of this lane's undecided cards right now.
       const updated = await applyTemplateToDeck(sb, row.lane, tpl, id);
