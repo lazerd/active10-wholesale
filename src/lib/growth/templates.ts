@@ -34,9 +34,15 @@ export function coldBump(kind: "chiro" | "club", greeting: string, originalSubje
       text: `${greeting}\n\nFloating this back up once in case it got buried. Happy to mail a free sample to the shop, just reply with where to send it. If it's not a fit, no worries, and this is the last you'll hear from me about it.\n\nDarrin & June`,
     };
   }
+  // Darrin's own words (9/17/26). Keep it plain: if it reads even slightly like AI, people delete it.
+  // No em dashes, no polished parallel lists, no "no catch" lines.
+  // "Hey Sylvan Chiropractic team," reads like a mail merge; a real name or "Hey there," doesn't.
+  const hey = /\bteam,$/.test(greeting) || greeting === "Hello,"
+    ? "Hey there,"
+    : greeting.startsWith("Dr. ") ? `Hey ${greeting}` : greeting.replace(/^Hi /, "Hey ");
   return {
     subject,
-    text: `${greeting}\n\nBumping this once in case it got buried under the day. The offer is simple: reply with a shipping address and I'll mail you samples this week. If it's not a fit, no problem, and I won't keep writing.\n\nDarrin`,
+    text: `${hey}\n\nWanted to give it one more shot and see if there's anything I could do or say to convince you to have a look at a complimentary sample. We've got a cult following for Active 10 and I know you'd see why if you gave it a quick look.\n\nJust let me know where to send it.\n\nThanks so much in advance for your consideration,\nDarrin`,
   };
 }
 
