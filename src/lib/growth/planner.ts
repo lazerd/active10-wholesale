@@ -1,7 +1,8 @@
 import {
   db, loadSettings, fetchAll, ptParts, ptToUtc, isWeekendDate, isInternal, greetingFor, withFooter, toHtml,
-  FREE_MAIL, DAY_MS, LANE_ORDER, OVERFLOW_ORDER, DEFAULT_CAPS, Lane, fixMojibake, looksWholesale, shortGreeting, monthDay, monthYear,
+  FREE_MAIL, DAY_MS, LANE_ORDER, OVERFLOW_ORDER, DEFAULT_CAPS, Lane, fixMojibake, looksWholesale, shortGreeting, monthDay, monthYear, COLD_FIRST,
 } from "./config";
+import { variantStats, makePicker, renderVariant, coldBudget, retireLosers } from "./abtest";
 import { laneStats, adaptCaps, multiplier, renderTemplate, Vars } from "./learning";
 import { loadQbContacts, lastOrderSummary, Contact } from "./qb";
 import * as T from "./templates";
@@ -11,7 +12,7 @@ import { latestSentTo, threadHasMessageFrom } from "./gmailx";
 export type PlanRow = {
   plan_date: string; send_at: string; lane: Lane; step: number; email: string; name: string | null; business: string | null;
   subject: string; body_text: string; body_html: string; dedupe_key: string; reply_to_queue_id: string | null;
-  prospect_id: string | null; qb_customer_id: string | null; meta: any;
+  prospect_id: string | null; qb_customer_id: string | null; meta: any; variant_id?: string | null; approval?: string;
 };
 type Cand = Omit<PlanRow, "plan_date" | "send_at" | "body_text" | "body_html"> & { text: string };
 type Pre = { email: string; quiet: number; used?: boolean; build: () => Promise<Cand | null> };
@@ -74,6 +75,14 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
   const stats = await laneStats(sb);
   caps = adaptCaps(caps, stats);
   const overflow = [...OVERFLOW_ORDER].sort((a, b) => multiplier(stats[b]) - multiplier(stats[a]));
+
+  // ── cold letters: warmup budget (5 → 25/day) split between chiro and club, A/B variants ──
+  const coldCap = coldBudget(s, date);
+  caps.club = Math.min(caps.club, Math.max(1, Math.round(coldCap * 0.2)));
+  caps.chiro = coldCap - caps.club;
+  if (!dry) { try { notes.push(...(await retireLosers(sb))); } catch (e: any) { notes.push("retire: " + e.message); } }
+  const pickVariant = makePicker(await variantStats(sb));
+  const autoLanes = new Set<string>(s.auto_lanes || ["chiro", "club", "cold_bump"]);
   const { data: tpls } = await sb.from("growth_templates").select("lane, subject, body");
   const overrides: Record<string, { subject: string; body: string }> = {};
   for (const t of tpls || []) overrides[t.lane] = t;
@@ -216,8 +225,9 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
     lanes.chiro.push({ email: e, quiet: 60, build: async () => {
       const g = p.name && /^Dr\.?\s+[A-Za-z' -]{2,25}$/.test(p.name) ? `${String(p.name).replace(/^Dr\.?\s+/, "Dr. ")},` : `Hi ${business} team,`;
       const vars: Vars = { greeting: g, business };
-      const m = finalize("chiro", T.chiroFirst(g, business), vars);
-      return { ...base, lane: "chiro", step: 1, email: e, name: p.name, business, subject: m.subject, text: m.text, dedupe_key: key, prospect_id: p.id, meta: { greeting: g, vars } };
+      const v = pickVariant("chiro");
+      const m = (v && renderVariant(v, vars)) || finalize("chiro", T.chiroFirst(g, business), vars);
+      return { ...base, lane: "chiro", step: 1, email: e, name: p.name, business, subject: m.subject, text: m.text, dedupe_key: key, prospect_id: p.id, variant_id: v?.id || null, meta: { greeting: g, vars, variant: v?.name || null } };
     } });
   }
   for (const p of prospects.filter((p) => p.type === "club" && p.status === "prospected" && p.email).sort(workFirst)) {
@@ -226,18 +236,21 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
     if (isCustomer(e) || usedKeys.has(key) || /sleepy hollow/i.test(p.business || "")) continue;
     lanes.club.push({ email: e, quiet: 60, build: async () => {
       const first = p.name ? String(p.name).split(" ")[0] : null;
-      const vars: Vars = { first_name: first, business: p.business };
-      const m = finalize("club", T.clubFirst(p.name, p.business), vars);
-      return { ...base, lane: "club", step: 1, email: e, name: p.name, business: p.business, subject: m.subject, text: m.text, dedupe_key: key, prospect_id: p.id, meta: { greeting: first ? `Hi ${first},` : null, vars } };
+      const vars: Vars = { first_name: first, business: p.business, greeting: first ? `Hi ${first},` : "Hello," };
+      const v = pickVariant("club");
+      const m = (v && renderVariant(v, vars)) || finalize("club", T.clubFirst(p.name, p.business), vars);
+      return { ...base, lane: "club", step: 1, email: e, name: p.name, business: p.business, subject: m.subject, text: m.text, dedupe_key: key, prospect_id: p.id, variant_id: v?.id || null, meta: { greeting: first ? `Hi ${first},` : null, vars, variant: v?.name || null } };
     } });
   }
 
   // ── fill: each lane up to its cap in priority order, then overflow ──
   const chosen: Cand[] = [];
   const counts: Record<string, number> = {};
+  const isCold = (l: Lane) => COLD_FIRST.includes(l);
+  const used = (cold: boolean) => chosen.filter((c) => isCold(c.lane) === cold).length;
   const take = async (lane: Lane, limit: number) => {
     for (const pre of lanes[lane]) {
-      if (chosen.length >= cap || (counts[lane] || 0) >= limit) return;
+      if (used(isCold(lane)) >= (isCold(lane) ? coldCap : cap) || (counts[lane] || 0) >= limit) return;
       if (pre.used || blocked(pre.email, pre.quiet)) continue;
       pre.used = true;
       let c: Cand | null = null;
@@ -249,7 +262,9 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
     }
   };
   for (const l of LANE_ORDER) { await take(l, caps[l]); mark(`lane ${l}`); }
-  for (const l of overflow) if (chosen.length < cap) await take(l, cap);
+  for (const l of overflow) if (used(false) < cap) await take(l, cap);
+  // A short club list (or chiro list) hands its unused cold slots to the other.
+  for (const l of COLD_FIRST) if (used(true) < coldCap) await take(l, coldCap);
   mark("filled");
 
   const pools: Record<string, number> = {};
@@ -265,7 +280,9 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
     const minute = Math.round(s.window_start + i * step + Math.random() * step * 0.6);
     const body_text = withFooter(c.text, s.footer_address);
     const { text: _t, ...rest } = c;
-    return { ...rest, plan_date: date, send_at: ptToUtc(date, minute).toISOString(), body_text, body_html: toHtml(body_text) };
+    // Cold lanes send on their own; customer lanes wait for a right swipe.
+    const approval = autoLanes.has(c.lane) ? "approved" : "pending";
+    return { ...rest, plan_date: date, send_at: ptToUtc(date, minute).toISOString(), body_text, body_html: toHtml(body_text), approval };
   });
 
   if (!dry) {
@@ -273,7 +290,8 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
       const { error } = await sb.from("growth_queue").insert(rows);
       if (error) for (const r of rows) { const { error: e1 } = await sb.from("growth_queue").insert(r); if (e1) notes.push(`queue ${r.email}: ${e1.message}`); }
     }
-    await sb.from("growth_settings").update({ last_plan_date: date, updated_at: new Date().toISOString() }).eq("id", "default");
+    const coldStart = !s.cold_start_date && rows.some((r) => COLD_FIRST.includes(r.lane)) ? { cold_start_date: date } : {};
+    await sb.from("growth_settings").update({ last_plan_date: date, updated_at: new Date().toISOString(), ...coldStart }).eq("id", "default");
   }
   return { date, rows, counts, pools, notes };
 }

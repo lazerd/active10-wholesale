@@ -6,6 +6,21 @@ import { scanInbox } from "./inbox";
 import { planDay } from "./planner";
 import { sendDigest } from "./digest";
 import { discover } from "./discover";
+import { proposeChallengers } from "./abtest";
+
+/** Gemini with a model chain: each free-tier model has its own small daily quota. */
+async function gemini(prompt: string) {
+  for (const model of ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]) {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, cache: "no-store",
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json", temperature: 0.8 } }),
+    });
+    const j = await r.json().catch(() => ({}));
+    const t = j?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (t) return JSON.parse(t);
+  }
+  throw new Error("Gemini unavailable");
+}
 
 /**
  * One heartbeat (pg_cron hits /api/growth/tick every 10 minutes):
@@ -46,6 +61,13 @@ export async function tick() {
   out.live = live;
   if (live && token && pt.minutes >= s.window_start - 5 && pt.minutes <= s.window_end + 90) {
     out.sent = await sendDue(sb, token, 2, s.require_approval !== false);
+  }
+
+  // Once a week: draft a new challenger letter for Darrin to approve at /abtests.
+  const lastCh = s.last_challenger_date;
+  if (Date.now() - t0 < 15000 && (!lastCh || Date.parse(pt.date) - Date.parse(lastCh) >= 7 * 86400000)) {
+    await sb.from("growth_settings").update({ last_challenger_date: pt.date }).eq("id", "default");
+    try { out.challengers = await proposeChallengers(sb, gemini); } catch (e: any) { out.challengers = { error: e.message }; }
   }
 
   if (Date.now() - t0 < 20000) {

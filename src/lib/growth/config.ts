@@ -28,7 +28,7 @@ export const LANE_LABEL: Record<Lane, string> = {
 export const DEFAULT_CAPS: Record<Lane, number> = {
   sample_followup: 3, restock: 5, winback_bump: 4, cold_bump: 6, winback: 10, chiro: 8, club: 2,
 };
-export const OVERFLOW_ORDER: Lane[] = ["winback", "chiro", "club"];
+export const OVERFLOW_ORDER: Lane[] = ["winback"];
 
 export type Settings = {
   id: string; enabled: boolean; daily_cap: number; lane_caps: Partial<Record<Lane, number>>;
@@ -36,7 +36,10 @@ export type Settings = {
   footer_address: string | null; digest_to: string; city_cursor: number;
   last_plan_date: string | null; last_inbox_scan: string | null; last_error: string | null;
   require_approval: boolean;
+  auto_lanes?: string[] | null; cold_start_date?: string | null; cold_ramp?: number[] | null; last_challenger_date?: string | null;
 };
+/** Cold first letters: governed by the warmup budget and the A/B test, not the daily cap. */
+export const COLD_FIRST: Lane[] = ["chiro", "club"];
 
 /** The next Monday–Friday after `date` (YYYY-MM-DD). */
 export function nextWeekday(date: string): string {
