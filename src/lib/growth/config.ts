@@ -36,7 +36,7 @@ export type Settings = {
   footer_address: string | null; digest_to: string; city_cursor: number;
   last_plan_date: string | null; last_inbox_scan: string | null; last_error: string | null;
   require_approval: boolean;
-  auto_lanes?: string[] | null; cold_start_date?: string | null; cold_ramp?: number[] | null; last_challenger_date?: string | null;
+  auto_lanes?: string[] | null; cold_from?: string | null; cold_reply_to?: string | null; cold_start_date?: string | null; cold_ramp?: number[] | null; last_challenger_date?: string | null;
 };
 /** Cold first letters: governed by the warmup budget and the A/B test, not the daily cap. */
 export const COLD_FIRST: Lane[] = ["chiro", "club"];

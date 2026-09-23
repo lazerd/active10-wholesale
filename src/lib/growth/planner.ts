@@ -178,7 +178,15 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
     if (a < 6 || a > 21) continue;
     const key = `cold:${e}:2`;
     if (usedKeys.has(key)) continue;
+    const firstViaResend = queue.find((q) => lower(q.email) === e && (q.lane === "chiro" || q.lane === "club") && q.status === "sent" && q.meta?.via === "resend");
     lanes.cold_bump.push({ email: e, quiet: 5, build: async () => {
+      if (firstViaResend) {
+        const g = firstViaResend.meta?.greeting || (p.name ? `Hi ${String(p.name).split(" ")[0]},` : "Hello,");
+        const vars: Vars = { greeting: g };
+        const built = T.coldBump(p.type === "club" ? "club" : "chiro", g, firstViaResend.subject);
+        const m = p.type === "club" ? built : finalize("cold_bump", built, vars);
+        return { ...base, lane: "cold_bump", step: 2, email: e, name: cleanBusiness(p.business) || shortGreeting(g), business: p.business, subject: m.subject, text: m.text, dedupe_key: key, prospect_id: p.id, meta: { via: "resend", inReplyTo: firstViaResend.message_id_header, greeting: g, vars } };
+      }
       const t = await gmail();
       if (!t) return null;
       const orig = await latestSentTo(t, e, 45);
@@ -227,7 +235,7 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
       const vars: Vars = { greeting: g, business };
       const v = pickVariant("chiro");
       const m = (v && renderVariant(v, vars)) || finalize("chiro", T.chiroFirst(g, business), vars);
-      return { ...base, lane: "chiro", step: 1, email: e, name: p.name, business, subject: m.subject, text: m.text, dedupe_key: key, prospect_id: p.id, variant_id: v?.id || null, meta: { greeting: g, vars, variant: v?.name || null } };
+      return { ...base, lane: "chiro", step: 1, email: e, name: p.name, business, subject: m.subject, text: m.text, dedupe_key: key, prospect_id: p.id, variant_id: v?.id || null, meta: { greeting: g, vars, variant: v?.name || null, via: s.cold_from ? "resend" : "gmail" } };
     } });
   }
   for (const p of prospects.filter((p) => p.type === "club" && p.status === "prospected" && p.email).sort(workFirst)) {
@@ -239,7 +247,7 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
       const vars: Vars = { first_name: first, business: p.business, greeting: first ? `Hi ${first},` : "Hello," };
       const v = pickVariant("club");
       const m = (v && renderVariant(v, vars)) || finalize("club", T.clubFirst(p.name, p.business), vars);
-      return { ...base, lane: "club", step: 1, email: e, name: p.name, business: p.business, subject: m.subject, text: m.text, dedupe_key: key, prospect_id: p.id, variant_id: v?.id || null, meta: { greeting: first ? `Hi ${first},` : null, vars, variant: v?.name || null } };
+      return { ...base, lane: "club", step: 1, email: e, name: p.name, business: p.business, subject: m.subject, text: m.text, dedupe_key: key, prospect_id: p.id, variant_id: v?.id || null, meta: { greeting: first ? `Hi ${first},` : null, vars, variant: v?.name || null, via: s.cold_from ? "resend" : "gmail" } };
     } });
   }
 

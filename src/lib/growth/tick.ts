@@ -7,6 +7,7 @@ import { planDay } from "./planner";
 import { sendDigest } from "./digest";
 import { discover } from "./discover";
 import { proposeChallengers } from "./abtest";
+import { sendViaResend, checkResendBounces } from "./resendx";
 
 /** Gemini with a model chain: each free-tier model has its own small daily quota. */
 async function gemini(prompt: string) {
@@ -60,8 +61,11 @@ export async function tick() {
   const live = s.enabled && (!s.start_date || pt.date >= s.start_date) && s.paused_on !== pt.date && weekday;
   out.live = live;
   if (live && token && pt.minutes >= s.window_start - 5 && pt.minutes <= s.window_end + 90) {
-    out.sent = await sendDue(sb, token, 2, s.require_approval !== false);
+    out.sent = await sendDue(sb, token, 2, s.require_approval !== false, s);
   }
+
+  // Resend bounces and spam complaints never reach Gmail; ask Resend.
+  if (Date.now() - t0 < 25000) { try { out.resendDelivery = await checkResendBounces(sb); } catch (e: any) { out.resendDelivery = { error: e.message }; } }
 
   // Once a week: draft a new challenger letter for Darrin to approve at /abtests.
   const lastCh = s.last_challenger_date;
@@ -76,7 +80,7 @@ export async function tick() {
   return out;
 }
 
-async function sendDue(sb: SupabaseClient, token: string, max: number, requireApproval: boolean) {
+async function sendDue(sb: SupabaseClient, token: string, max: number, requireApproval: boolean, s: any) {
   let q = sb.from("growth_queue").select("*").eq("status", "planned").lte("send_at", new Date().toISOString());
   if (requireApproval) q = q.eq("approval", "approved"); // only what Darrin swiped right
   const { data: due } = await q.order("send_at").limit(max);
@@ -95,6 +99,27 @@ async function sendDue(sb: SupabaseClient, token: string, max: number, requireAp
       if (sup || isInternal(e)) { await skip("suppressed"); continue; }
       const { data: ev } = await sb.from("growth_events").select("id").ilike("email", e).in("kind", ["reply", "unsubscribe", "bounce"]).gte("at", row.created_at).limit(1);
       if (ev?.length) { await skip("they wrote in"); continue; }
+
+      // Cold letters through Resend from the outreach subdomain (Gmail never sees them).
+      if (row.meta?.via === "resend") {
+        if (!s.cold_from) { await skip("cold_from not set"); continue; }
+        const { data: prior } = await sb.from("growth_queue").select("id").ilike("email", e).eq("status", "sent").eq("lane", row.lane).limit(1);
+        if (prior?.length) { await skip("already sent this lane"); continue; }
+        const r = await sendViaResend({ from: s.cold_from, replyTo: s.cold_reply_to || "activeformulations@gmail.com", to: row.email, subject: row.subject, text: row.body_text, html: row.body_html, inReplyTo: row.meta?.inReplyTo || null });
+        const now = new Date().toISOString();
+        await sb.from("growth_queue").update({ status: "sent", sent_at: now, gmail_id: r.id, message_id_header: r.messageId }).eq("id", row.id);
+        await sb.from("growth_events").insert({ email: e, kind: "contacted", gmail_id: r.id, meta: { lane: row.lane, via: "resend" } });
+        if (row.prospect_id) {
+          const { data: p } = await sb.from("outreach_prospects").select("id, touch_count").eq("id", row.prospect_id).maybeSingle();
+          if (p) {
+            const tc = (p.touch_count || 0) + 1;
+            await sb.from("outreach_prospects").update({ status: tc > 1 ? "followed_up" : "emailed", touch_count: tc, last_contacted_at: now }).eq("id", p.id);
+            await sb.from("outreach_touches").insert({ prospect_id: p.id, angle: row.lane, subject: row.subject, body: row.body_text, status: "sent", sent_at: now, channel: "email" });
+          }
+        }
+        res.push({ email: e, lane: row.lane, sent: true, via: "resend" });
+        continue;
+      }
 
       // Gmail is the source of truth for what already went out.
       const threadId = row.meta?.threadId || null;
