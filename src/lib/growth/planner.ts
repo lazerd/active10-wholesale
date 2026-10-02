@@ -120,7 +120,7 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
   let token: string | null = null;
   const gmail = async () => (token ??= await getGmailAccess());
 
-  const lanes: Record<Lane, Pre[]> = { sample_followup: [], restock: [], winback_bump: [], cold_bump: [], winback: [], chiro: [], club: [] };
+  const lanes: Record<Lane, Pre[]> = { sample_followup: [], restock: [], winback_bump: [], cold_bump: [], winback: [], chiro: [], club: [], case_deal: [] };
   const base = { reply_to_queue_id: null, prospect_id: null, qb_customer_id: null, meta: {} };
 
   // ── sample follow-up: a sample went out 12–60 days ago, no order since ──

@@ -13,7 +13,7 @@ export const db = (): SupabaseClient =>
  * orders actually came from (the July FIREWORKS mailing to existing accounts
  * produced every order this summer; the cold chiro letter replies ~4%).
  */
-export type Lane = "sample_followup" | "restock" | "winback_bump" | "cold_bump" | "winback" | "chiro" | "club";
+export type Lane = "sample_followup" | "restock" | "winback_bump" | "cold_bump" | "winback" | "chiro" | "club" | "case_deal";
 export const LANE_ORDER: Lane[] = ["sample_followup", "restock", "winback_bump", "cold_bump", "winback", "chiro", "club"];
 export const LANE_LABEL: Record<Lane, string> = {
   sample_followup: "Sample follow-up",
@@ -23,10 +23,12 @@ export const LANE_LABEL: Record<Lane, string> = {
   winback: "Win-back (15% off)",
   chiro: "Cold chiro letter",
   club: "Cold club letter",
+  case_deal: "Tube case deal ($8/tube)",
 };
 /** Per-lane daily ceilings. Unused slots overflow to OVERFLOW_ORDER. */
 export const DEFAULT_CAPS: Record<Lane, number> = {
   sample_followup: 3, restock: 5, winback_bump: 4, cold_bump: 6, winback: 10, chiro: 8, club: 2,
+  case_deal: 0,   // never planned; rows are queued by scripts/queue-case-deal.ts and still need a right swipe
 };
 export const OVERFLOW_ORDER: Lane[] = ["winback"];
 
