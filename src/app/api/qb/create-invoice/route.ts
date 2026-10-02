@@ -24,6 +24,9 @@ const BUNDLES: Record<string, { sku: string; qty: number; label: string; weight:
     { sku: "032", qty: 3, label: "Active 10 PLUS Roll-On", weight: 19.98 },
     { sku: "011a", qty: 10, label: "Active 10 PLUS Sample Packet", weight: 0.65 },
   ],
+  "tube-case-24": [
+    { sku: "008", qty: 24, label: "Active 10 Original 4oz Tube", weight: 1 },
+  ],
 };
 
 export async function POST(req: NextRequest) {
