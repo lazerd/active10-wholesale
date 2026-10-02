@@ -31,7 +31,7 @@ export function coldBump(kind: "chiro" | "club", greeting: string, originalSubje
   if (kind === "club") {
     return {
       subject,
-      text: `${greeting}\n\nFloating this back up once in case it got buried. Happy to mail a free sample to the shop, just reply with where to send it. If it's not a fit, no worries, and this is the last you'll hear from me about it.\n\nDarrin & June`,
+      text: `${greeting}\n\nI won't keep bugging you, but the free sample offer still stands. Just reply with where to send it and I'll mail one to the shop. If it's not a fit, no worries, and this is the last you'll hear from me about it.\n\nDarrin & June`,
     };
   }
   // Darrin's own words (9/17/26). Keep it plain: if it reads even slightly like AI, people delete it.
@@ -76,7 +76,7 @@ export function winback(greeting: string, o: { lastDate: string; portal: boolean
 export function winbackBump(greeting: string, originalSubject: string): Mail {
   return {
     subject: /^re:/i.test(originalSubject) ? originalSubject : `Re: ${originalSubject}`,
-    text: `${shortGreeting(greeting)}, floating this back up in case it got buried. The 15% off still stands. Just reply with what you need and I'll take care of the rest.\n\nDarrin`,
+    text: `${shortGreeting(greeting)}, I won't keep bugging you, but the 15% off is still there if you want it. Just reply with what you need and I'll take care of the rest.\n\nDarrin`,
   };
 }
 
