@@ -68,6 +68,17 @@ export async function scanInbox(sb: SupabaseClient, token: string, s: Settings) 
       }
       continue;
     }
+    // A mail app's one-click unsubscribe (Apple Mail, Gmail) answers our List-Unsubscribe
+    // mailto with subject "unsubscribe" and an Auto-Submitted header, so it has to be
+    // honored before the automated-mail skip below throws it away.
+    if (/^\s*unsubscribe\s*$/i.test(subj) && !AUTOMATED.test(from)) {
+      await suppress(sb, from, "unsubscribe button");
+      await event(sb, from, "unsubscribe", id, { subject: subj, via: "list-unsubscribe" });
+      res.unsubscribes++;
+      res.cancelled += await cancelPlanned(sb, from, "unsubscribed");
+      continue;
+    }
+
     // Newsletters, social notifications, receipts: bulk mail always carries one
     // of these headers; a person hitting Reply never does.
     if (AUTOMATED.test(from) || m.h["list-unsubscribe"] || /bulk|list|junk/i.test(m.h.precedence || "") || /auto-/i.test(m.h["auto-submitted"] || "")) continue;
