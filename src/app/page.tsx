@@ -350,7 +350,12 @@ export default function App() {
         if (Number(d.minOrder) > 0 && wsSub < Number(d.minOrder)) { setCodeMsg({ text: `This welcome offer needs a $${Number(d.minOrder).toFixed(0)}+ order. Add $${(Number(d.minOrder) - wsSub).toFixed(2)} more.`, ok: false }); setOrderSubmitting(false); return; }
       } catch { setOrderSubmitting(false); alert("Could not verify your discount code. Please try again."); return; }
     }
-    const oi: OrderItem[] = items.map(([id, q]) => { const p = products.find(p => p.id === id)!; const up = fp(p.retail, isDeal(p) ? 0 : effDisc); return { product_id: id, name: p.name, qty: q, unit_price: up, line_total: up * q }; });
+    // A case deal is saved as the tubes themselves (24 x the original tube at $8), so the order email,
+    // packing weight and QuickBooks invoice all show the real SKU and count. June packs from this.
+    const CASES: Record<string, { product_id: string; per: number; name: string }> = {
+      "tube-case-24": { product_id: "original-tube-4oz", per: 24, name: "Active 10 Original Tube 4oz (Case Deal - 24 tubes at $8)" },
+    };
+    const oi: OrderItem[] = items.map(([id, q]) => { const p = products.find(p => p.id === id)!; const up = fp(p.retail, isDeal(p) ? 0 : effDisc); const c = CASES[id]; if (c) { const each = Math.round(up / c.per * 100) / 100; return { product_id: c.product_id, name: c.name, qty: q * c.per, unit_price: each, line_total: Math.round(each * q * c.per * 100) / 100 }; } return { product_id: id, name: p.name, qty: q, unit_price: up, line_total: up * q }; });
     const cf = processingFee(total, payMethod);
     const grossTotal = Math.round((total + cf) * 100) / 100;
     const creditToApply = applyCreditOn ? Math.min(creditBalance.available, grossTotal) : 0;
