@@ -163,6 +163,8 @@ export default function App() {
       // while notifying subscribers, and any query awaited in here can
       // deadlock the whole tab (the notorious freeze-on-tab-refocus bug).
       setTimeout(() => {
+        // Arrived from an emailed reset link: open Change Password for them.
+        if (event === "PASSWORD_RECOVERY") setShowChangePw(true);
         if (event === "SIGNED_OUT") {
           loadedUserId.current = null;
           setSession(null);
@@ -306,7 +308,7 @@ export default function App() {
   const reorderLast = () => { if (!lastOrder) return; const next: Record<string, number> = {}; for (const it of lastOrder.items || []) { if (products.find(p => p.id === it.product_id)) next[it.product_id] = (next[it.product_id] || 0) + Number(it.qty || 0); } if (Object.keys(next).length === 0) { alert("Those products are no longer available to reorder."); return; } setCart(next); setView("cart"); };
 
   const changePassword = async () => { if (newPw.length < 6) { setPwMsg("Password must be at least 6 characters."); return; } const { error } = await supabase.auth.updateUser({ password: newPw }); if (!error) { setPwMsg("Password updated!"); setNewPw(""); setTimeout(() => { setShowChangePw(false); setPwMsg(""); }, 2000); } else setPwMsg("Error: " + error.message); };
-  const forgotPassword = async () => { if (!resetEmail) { setResetMsg("Enter your email."); return; } const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, { redirectTo: "https://wholesale.getactive10.com" }); if (!error) setResetMsg("Reset link sent! Check your inbox."); else setResetMsg("Error: " + error.message); };
+  const forgotPassword = async () => { if (!resetEmail) { setResetMsg("Enter your email."); return; } try { const r = await fetch("/api/forgot-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: resetEmail }) }); const d = await r.json(); if (d.ok) setResetMsg("Reset link sent! Check your inbox."); else setResetMsg("Error: " + (d.error || "Could not send reset email.")); } catch { setResetMsg("Error: Could not send reset email."); } };
   const login = async () => { setLoginError(""); const e = loginForm.email.trim().toLowerCase(), p = loginForm.password.trim(); if (!e || !p) { setLoginError("Please enter your credentials."); return; } const { error } = await supabase.auth.signInWithPassword({ email: e, password: p }); if (error) setLoginError(error.message === "Invalid login credentials" ? "Invalid email or password." : error.message); };
   const logout = async () => { await supabase.auth.signOut(); setSession(null); setIsAdmin(false); setIsAffiliate(false); setCustomer(null); setLoginForm({ email: "", password: "" }); setView("shop"); setCart({}); setSelectedCustomer(null); setAppliedCode(""); setAppliedPct(0); setAppliedFreeShip(false); setAppliedType(""); setAppliedSamples(0); setApplyCreditOn(false); setCodeInput(""); setCodeMsg(null); };
 
