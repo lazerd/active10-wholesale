@@ -80,7 +80,7 @@ export async function tick() {
   return out;
 }
 
-async function sendDue(sb: SupabaseClient, token: string, max: number, requireApproval: boolean, s: any) {
+export async function sendDue(sb: SupabaseClient, token: string, max: number, requireApproval: boolean, s: any) {
   let q = sb.from("growth_queue").select("*").eq("status", "planned").lte("send_at", new Date().toISOString());
   if (requireApproval) q = q.eq("approval", "approved"); // only what Darrin swiped right
   const { data: due } = await q.order("send_at").limit(max);
