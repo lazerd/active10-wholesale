@@ -156,53 +156,43 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
     } });
   }
 
-  // ── win-back nudge: one in-thread reminder 6–14 days after the offer ──
+  // ── second email: never a reminder (Darrin 10/10/26: no reply = not interested; 110 bumps → 0 orders).
+  // A fresh first-style note in a NEW thread, 10–30 days later, with a bigger offer (T.secondOffer).
+  // Skips anyone who replied to the first email or already got the case deal.
+  const gotCase = new Set(queue.filter((q) => q.lane === "case_deal" && q.status !== "skipped" && q.status !== "cancelled").map((q) => lower(q.email)));
   for (const q of queue.filter((q) => q.lane === "winback" && q.step === 1 && q.status === "sent" && q.sent_at)) {
     const a = age(q.sent_at);
-    if (a < 6 || a > 14) continue;
+    if (a < 10 || a > 30 || gotCase.has(lower(q.email))) continue;
     const key = String(q.dedupe_key).replace(/:1$/, ":2");
     const c = byEmail.get(lower(q.email));
     if (usedKeys.has(key) || (c?.lastDate && q.meta?.lastDate && c.lastDate > q.meta.lastDate)) continue;
-    lanes.winback_bump.push({ email: lower(q.email), quiet: 5, build: async () => {
+    lanes.winback_bump.push({ email: lower(q.email), quiet: 9, build: async () => {
       const t = await gmail();
       if (!t || !q.gmail_thread_id || (await threadHasMessageFrom(t, q.gmail_thread_id, q.email))) return null;
-      const vars: Vars = { greeting_short: shortGreeting(q.meta?.greeting || "Hi,") };
-      const m = finalize("winback_bump", T.winbackBump(q.meta?.greeting || "Hi", q.subject), vars);
-      return { ...base, lane: "winback_bump", step: 2, email: lower(q.email), name: q.name, business: q.business, subject: m.subject, text: m.text, dedupe_key: key, reply_to_queue_id: q.id, qb_customer_id: q.qb_customer_id, meta: { threadId: q.gmail_thread_id, inReplyTo: q.message_id_header, lastDate: q.meta?.lastDate, vars } };
+      const m = T.secondOffer("customer", q.meta?.greeting || "Hi,");
+      return { ...base, lane: "winback_bump", step: 2, email: lower(q.email), name: q.name, business: q.business, subject: m.subject, text: m.text, dedupe_key: key, qb_customer_id: q.qb_customer_id, meta: { newThread: true, lastDate: q.meta?.lastDate, greeting: q.meta?.greeting } };
     } });
   }
 
-  // ── cold follow-up: the single bump, 6–21 days after the first letter ──
   for (const p of prospects.filter((p) => p.status === "emailed" && p.touch_count === 1 && p.last_contacted_at).sort((a, b) => a.last_contacted_at.localeCompare(b.last_contacted_at))) {
     const e = lower(p.email), a = age(p.last_contacted_at);
-    if (a < 6 || a > 21) continue;
+    if (a < 10 || a > 30 || gotCase.has(e)) continue;
     const key = `cold:${e}:2`;
     if (usedKeys.has(key)) continue;
     const firstViaResend = queue.find((q) => lower(q.email) === e && (q.lane === "chiro" || q.lane === "club") && q.status === "sent" && q.meta?.via === "resend");
-    lanes.cold_bump.push({ email: e, quiet: 5, build: async () => {
-      if (firstViaResend) {
-        const g = firstViaResend.meta?.greeting || (p.name ? `Hi ${String(p.name).split(" ")[0]},` : "Hello,");
-        const vars: Vars = { greeting: g };
-        const built = T.coldBump(p.type === "club" ? "club" : "chiro", g, firstViaResend.subject);
-        const m = p.type === "club" ? built : finalize("cold_bump", built, vars);
-        return { ...base, lane: "cold_bump", step: 2, email: e, name: cleanBusiness(p.business) || shortGreeting(g), business: p.business, subject: m.subject, text: m.text, dedupe_key: key, prospect_id: p.id, meta: { via: "resend", inReplyTo: firstViaResend.message_id_header, greeting: g, vars } };
+    const kind = p.type === "club" ? "club" : "chiro";
+    lanes.cold_bump.push({ email: e, quiet: 9, build: async () => {
+      let g = firstViaResend?.meta?.greeting as string | undefined;
+      if (!firstViaResend) {
+        const t = await gmail();
+        if (!t) return null;
+        const orig = await latestSentTo(t, e, 45);
+        if (!orig || (await threadHasMessageFrom(t, orig.threadId, e))) return null;
+        g = (orig.snippet.match(/^(.{2,60}?,)s/) || [])[1];
       }
-      const t = await gmail();
-      if (!t) return null;
-      const orig = await latestSentTo(t, e, 45);
-      if (!orig || (await threadHasMessageFrom(t, orig.threadId, e))) return null;
-      // Reuse the exact greeting the first letter opened with.
-      const g = (orig.snippet.match(/^(.{2,60}?,)\s/) || [])[1] || (p.name ? `Hi ${String(p.name).split(" ")[0]},` : "Hello,");
-      // A garbled original subject gets a clean one; Gmail only threads on an
-      // exact subject match, so that bump starts a fresh thread on our side
-      // (In-Reply-To still threads it for the recipient).
-      const raw = orig.h.subject || "Active 10";
-      const subject = fixMojibake(raw);
-      const vars: Vars = { greeting: g };
-      // Club and chiro bumps differ in voice, so only chiro bumps take his template.
-      const built = T.coldBump(p.type === "club" ? "club" : "chiro", g, subject);
-      const m = p.type === "club" ? built : finalize("cold_bump", built, vars);
-      return { ...base, lane: "cold_bump", step: 2, email: e, name: cleanBusiness(p.business) || shortGreeting(g), business: p.business, subject: m.subject, text: m.text, dedupe_key: key, prospect_id: p.id, meta: { threadId: orig.threadId, newThread: subject !== raw, inReplyTo: orig.h["message-id"] || null, greeting: g, vars } };
+      g ||= p.name ? `Hi ${String(p.name).split(" ")[0]},` : "Hello,";
+      const m = T.secondOffer(kind, g);
+      return { ...base, lane: "cold_bump", step: 2, email: e, name: cleanBusiness(p.business) || shortGreeting(g), business: p.business, subject: m.subject, text: m.text, dedupe_key: key, prospect_id: p.id, meta: { newThread: true, greeting: g, ...(firstViaResend ? { via: "resend" } : {}) } };
     } });
   }
 

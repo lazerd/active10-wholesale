@@ -25,24 +25,24 @@ export function clubFirst(name: string | null, business: string | null): Mail {
   return { subject: l.subject, text: l.body };
 }
 
-/** The ONE follow-up a cold contact ever gets — the letter promises no sequence. */
-export function coldBump(kind: "chiro" | "club", greeting: string, originalSubject: string): Mail {
-  const subject = /^re:/i.test(originalSubject) ? originalSubject : `Re: ${originalSubject}`;
-  if (kind === "club") {
-    return {
-      subject,
-      text: `${greeting}\n\nI won't keep bugging you, but the free sample offer still stands. Just reply with where to send it and I'll mail one to the shop. If it's not a fit, no worries, and this is the last you'll hear from me about it.\n\nDarrin & June`,
-    };
-  }
-  // Darrin's own words (9/17/26). Keep it plain: if it reads even slightly like AI, people delete it.
-  // No em dashes, no polished parallel lists, no "no catch" lines.
-  // "Hey Sylvan Chiropractic team," reads like a mail merge; a real name or "Hey there," doesn't.
-  const hey = /\bteam,$/.test(greeting) || greeting === "Hello,"
-    ? "Hey there,"
-    : greeting.startsWith("Dr. ") ? `Hey ${greeting}` : greeting.replace(/^Hi /, "Hey ");
+/**
+ * The second (and last) email anyone gets. Never a reminder: Darrin 10/10/26, "when people don't
+ * respond the first time it means they're not interested" (110 reminder bumps → 0 orders). It reads
+ * as a brand-new first note in a NEW thread, with a bigger offer than the first email. Right now that
+ * is the clearance case (24 tubes at $8), the offer that got 6 orders from 29 emails on 10/5.
+ */
+export function secondOffer(kind: "chiro" | "club" | "customer", greeting: string): Mail {
+  const who = kind === "club"
+    ? "I'm Darrin, I make Active 10, a pain relief cream. A lot of tennis players use it for sore shoulders, elbows and knees."
+    : kind === "chiro"
+      ? "I'm Darrin, I make Active 10, a pain relief cream. A lot of chiropractors keep it at the front desk for patients."
+      : "It's Darrin from Active 10.";
+  const deal = kind === "customer"
+    ? "We ended up with extra stock of our original 4oz tubes, so I'm offering a case of 24 at $8 a tube to the accounts that have carried us. That's $192 plus shipping, about half our normal wholesale. They retail for $24.95, so you'd make about $400 on the case."
+    : "We ended up with extra stock of our original 4oz tubes, so for new accounts I'm doing one case of 24 at $8 a tube. That's $192 plus shipping. They retail for $24.95, so you'd make about $400 on the case.";
   return {
-    subject,
-    text: `${hey}\n\nWanted to give it one more shot and see if there's anything I could do or say to convince you to have a look at a complimentary sample. We've got a cult following for Active 10 and I know you'd see why if you gave it a quick look.\n\nJust let me know where to send it.\n\nThanks so much in advance for your consideration,\nDarrin`,
+    subject: "a case of Active 10 for $8 a tube",
+    text: `${greeting}\n\n${who}\n\n${deal}\n\nTo order, just reply "send a case" and I'll invoice you. Or set up a wholesale account at wholesale.getactive10.com.\n\nIt's only while this batch lasts.\n\n${SIGN}`,
   };
 }
 
@@ -70,13 +70,6 @@ export function winback(greeting: string, o: { lastDate: string; portal: boolean
   return {
     subject: "15% off your next Active 10 order",
     text: `${greeting}\n\nYour last Active 10 order was back in ${monthYear(o.lastDate)}, so I wanted to reach out personally. We're still here, and my cofounder June and I still pack most orders ourselves.\n\nIf you'd like to restock, I'll take 15% off your next order, any size. Easiest way: reply with what you'd like and I'll send you an invoice.${online}\n\nAnd if it's no longer a fit, no hard feelings. A one-line reply telling me why would honestly help.\n\n${SIGN}`,
-  };
-}
-
-export function winbackBump(greeting: string, originalSubject: string): Mail {
-  return {
-    subject: /^re:/i.test(originalSubject) ? originalSubject : `Re: ${originalSubject}`,
-    text: `${shortGreeting(greeting)}, I won't keep bugging you, but the 15% off is still there if you want it. Just reply with what you need and I'll take care of the rest.\n\nDarrin`,
   };
 }
 
