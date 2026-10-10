@@ -81,7 +81,8 @@ export async function tick() {
 }
 
 export async function sendDue(sb: SupabaseClient, token: string, max: number, requireApproval: boolean, s: any) {
-  let q = sb.from("growth_queue").select("*").eq("status", "planned").lte("send_at", new Date().toISOString());
+  // Never before its PT plan_date, even if send_at was pulled earlier (10/8: send-now fired 10/9 + 10/12 rows early).
+  let q = sb.from("growth_queue").select("*").eq("status", "planned").lte("send_at", new Date().toISOString()).lte("plan_date", ptParts().date);
   if (requireApproval) q = q.eq("approval", "approved"); // only what Darrin swiped right
   const { data: due } = await q.order("send_at").limit(max);
   const res: any[] = [];

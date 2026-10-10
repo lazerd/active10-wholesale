@@ -4,7 +4,7 @@
  * Exists because the tick only sends 2 per 10-minute run inside the PT window. Darrin 10/8: "we are going too slow".
  *   npx tsx --env-file=.env.local scripts/send-now.ts case_deal [gapSec=45]
  */
-import { db, loadSettings } from "../src/lib/growth/config";
+import { db, loadSettings, ptParts } from "../src/lib/growth/config";
 import { getGmailAccess } from "../src/lib/gmail";
 import { sendDue } from "../src/lib/growth/tick";
 
@@ -12,7 +12,7 @@ const lane = process.argv[2]; const gap = Number(process.argv[3] || 45) * 1000;
 if (!lane) throw new Error("usage: send-now.ts <lane> [gapSec]");
 (async () => {
   const sb = db(); const s = await loadSettings(sb);
-  const { data: rows } = await sb.from("growth_queue").select("id").eq("lane", lane).eq("status", "planned").eq("approval", "approved").order("send_at");
+  const { data: rows } = await sb.from("growth_queue").select("id").eq("lane", lane).eq("status", "planned").eq("approval", "approved").lte("plan_date", ptParts().date).order("send_at"); // today's (or overdue) only, never future days
   const ids = (rows || []).map((r) => r.id);
   console.log(`${ids.length} ${lane} rows to send now`);
   const t = Date.now();
