@@ -13,11 +13,12 @@ async function gget(token: string, path: string): Promise<any> {
   return r.json();
 }
 
-export async function listIds(token: string, q: string, max = 100): Promise<string[]> {
+/** trash: also search Trash/Spam (Darrin deletes bounces by hand as they arrive). */
+export async function listIds(token: string, q: string, max = 100, trash = false): Promise<string[]> {
   const ids: string[] = [];
   let page = "";
   do {
-    const j = await gget(token, `/messages?q=${encodeURIComponent(q)}&maxResults=${Math.min(100, max)}${page ? `&pageToken=${page}` : ""}`);
+    const j = await gget(token, `/messages?q=${encodeURIComponent(q)}&maxResults=${Math.min(100, max)}${trash ? "&includeSpamTrash=true" : ""}${page ? `&pageToken=${page}` : ""}`);
     for (const m of j.messages || []) ids.push(m.id);
     page = j.nextPageToken || "";
   } while (page && ids.length < max);

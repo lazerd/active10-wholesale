@@ -37,7 +37,8 @@ export async function scanInbox(sb: SupabaseClient, token: string, s: Settings) 
   const since = s.last_inbox_scan ? Math.floor(Date.parse(s.last_inbox_scan) / 1000) - 900 : Math.floor(Date.now() / 1000) - 2 * 86400;
   const res = { checked: 0, replies: 0, bounces: 0, unsubscribes: 0, samples: 0, cancelled: 0 };
 
-  const ids = await listIds(token, `after:${since} -in:sent -in:chats -in:drafts`, 60);
+  // Includes Trash: Darrin deletes bounce notices by hand, often before this scan runs.
+  const ids = await listIds(token, `after:${since} -in:sent -in:chats -in:drafts`, 60, true);
   const { data: done } = ids.length ? await sb.from("growth_events").select("gmail_id").in("gmail_id", ids) : { data: [] as any[] };
   const seen = new Set((done || []).map((d: any) => d.gmail_id));
 
@@ -56,13 +57,15 @@ export async function scanInbox(sb: SupabaseClient, token: string, s: Settings) 
     if (/mailer-daemon|postmaster/i.test(from) || BOUNCE_SUBJ.test(subj)) {
       const text = await getText(token, id).catch(() => m.snippet);
       const cands = Array.from(new Set((text.match(/[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) || []).map((x) => x.toLowerCase())))
-        .filter((x) => !OURS.test(x) && !/mailer-daemon|postmaster|google|gmail-smtp/i.test(x));
+        .filter((x) => !OURS.test(x) && !/mailer-daemon|postmaster|google|gmail-smtp|@mail\.gmail\.com$/i.test(x));
       for (const e of cands) {
         const [{ data: q }, { data: p }] = await Promise.all([
           sb.from("growth_queue").select("id").ilike("email", e).eq("status", "sent").limit(1),
           sb.from("outreach_prospects").select("id").ilike("email", e).limit(1),
         ]);
-        if (!q?.length && !p?.length) continue;
+        // A notice naming a single address is that address bouncing, even if it came from a
+        // send outside this queue (Shopify campaigns, a hand-sent email).
+        if (!q?.length && !p?.length && cands.length !== 1) continue;
         await suppress(sb, e, "bounced");
         await sb.from("outreach_prospects").update({ status: "dead" }).ilike("email", e);
         await event(sb, e, "bounce", id, { subject: subj });
