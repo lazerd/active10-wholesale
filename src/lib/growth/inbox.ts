@@ -11,7 +11,9 @@ import { listIds, getMeta, getText, addrOf, threadAddresses } from "./gmailx";
  */
 const OURS = /activeformulation|junemunroe|darrinjco|@getactive10\.com|@active10\.net/i;
 const AUTOMATED = /mailer-daemon|postmaster|no-?reply|donotreply|notifications?@|notify@|bounces?@|@shopify|@google\.com|@quickbooks|@intuit|@vercel|@github|@stripe|@squareup|@paypal|@amazon|@ups\.com|@fedex|@usps|@explee|@kurvpay|@resend/i;
-const UNSUB = /\b(unsubscribe|remove me|take me off|no thanks|no thank you|not interested|stop (emailing|sending|contacting)|do not (email|contact)|please stop)\b/i;
+const UNSUB = /\b(unsubscribe|remove me|take me off|no thanks|no thank you|not interested|stop (emailing|sending|contacting)|do not (email|contact)|please stop|rather not (hear|receive|get)|off (of )?(this|your|the) (e-?mail |mailing )?list|don.?t (email|contact|send))\b/i;
+// A reply that opens with a plain "No, but thank you" (Titan Medical, 10/13/26).
+const UNSUB_NO = /^\s*no\b[,.!]?\s*(but\s*)?thanks?( you)?\b/i;
 // "No longer a customer" replies (10/8/26: Dr. Popa "I no longer sell anything in my office",
 // Dr. Grant "Stop", a country that bans the product) only got the 60-day pause. These stop for good.
 const DONE = /^\s*stop\b|\bno longer (sell|carry|stock|need|want|order|use|practic|offer)|\b(retired|retiring|closed (my|our|the) (practice|office|clinic|business)|out of business|passed away|bans? (all )?products?)\b/i;
@@ -95,7 +97,7 @@ export async function scanInbox(sb: SupabaseClient, token: string, s: Settings) 
     res.replies++;
     res.cancelled += await cancelPlanned(sb, from, "they wrote in");
     await sb.from("outreach_prospects").update({ status: "replied" }).ilike("email", from).in("status", ["prospected", "emailed", "followed_up"]);
-    if (UNSUB.test(words) || UNSUB.test(subj.replace(/^re:\s*/i, "")) || DONE.test(words)) {
+    if (UNSUB.test(words) || UNSUB_NO.test(words) || UNSUB.test(subj.replace(/^re:\s*/i, "")) || DONE.test(words)) {
       await suppress(sb, from, "asked to stop");
       await event(sb, from, "unsubscribe", id, { snippet: words.slice(0, 240) });
       res.unsubscribes++;
