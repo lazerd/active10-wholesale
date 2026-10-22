@@ -73,6 +73,17 @@ export function winback(greeting: string, o: { lastDate: string; portal: boolean
   };
 }
 
+/** In-thread reply the moment someone answers a sample letter with "yes" / their address. */
+export function sampleConfirm(): string {
+  return `Thanks so much! Got it, and we'll get your samples on the road in the next day or two.
+
+Try one on yourself first, then hand a few of the packets to patients who come in sore and see what they say.
+
+If it earns a spot at the front desk, just reply here and I'll get you set up.
+
+${SIGN}`;
+}
+
 /** After a sample went out and nothing came back. */
 export function sampleFollowup(greeting: string): Mail {
   return {

@@ -1,6 +1,8 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { Settings } from "./config";
-import { listIds, getMeta, getText, addrOf, threadAddresses } from "./gmailx";
+import { listIds, getMeta, getText, addrOf, threadAddresses, sendMail } from "./gmailx";
+import { toHtml } from "./config";
+import { sampleConfirm } from "./templates";
 
 /**
  * Reads the activeformulations@ inbox since the last tick and turns it into
@@ -19,6 +21,9 @@ const UNSUB_NO = /^\s*no\b[,.!]?\s*(but\s*)?thanks?( you)?\b/i;
 const DONE = /^\s*stop\b|\bno longer (sell|carry|stock|need|want|order|use|practic|offer)|\b(retired|retiring|closed (my|our|the) (practice|office|clinic|business)|out of business|passed away|bans? (all )?products?)\b/i;
 const BOUNCE_SUBJ = /delivery status notification|undeliverable|undelivered mail|mail delivery (failed|subsystem)|returned mail|delivery (has )?failed|failure notice|address not found/i;
 const SAMPLE_THREAD = /samples? for|free sample|fellow dca|pro shop|did the samples/i;
+// A reply to one of our sample offers that says yes: a street address (ZIP) or a plain "send them".
+const SAMPLE_OFFER = /samples? for|free sample|pro shop/i;
+const SAMPLE_YES = /\b\d{5}(-\d{4})?\b|\b(yes|sure|please send|send (me |us |them |some|samples)|would (love|like)|mail (it|them))\b/i;
 
 /** Only the words they typed — drop the quoted original (which contains our own "no thanks" footer). */
 const ownWords = (snippet: string) => snippet.split(/\bOn [^\n]{0,90}wrote:|-----Original Message-----|From: /i)[0];
@@ -37,7 +42,7 @@ async function cancelPlanned(sb: SupabaseClient, email: string, reason: string):
 export async function scanInbox(sb: SupabaseClient, token: string, s: Settings) {
   const startedAt = new Date().toISOString();
   const since = s.last_inbox_scan ? Math.floor(Date.parse(s.last_inbox_scan) / 1000) - 900 : Math.floor(Date.now() / 1000) - 2 * 86400;
-  const res = { checked: 0, replies: 0, bounces: 0, unsubscribes: 0, samples: 0, cancelled: 0 };
+  const res = { checked: 0, replies: 0, bounces: 0, unsubscribes: 0, samples: 0, sampleConfirms: 0, cancelled: 0 };
 
   // Includes Trash: Darrin deletes bounce notices by hand, often before this scan runs.
   const ids = await listIds(token, `after:${since} -in:sent -in:chats -in:drafts`, 60, true);
@@ -101,6 +106,21 @@ export async function scanInbox(sb: SupabaseClient, token: string, s: Settings) 
       await suppress(sb, from, "asked to stop");
       await event(sb, from, "unsubscribe", id, { snippet: words.slice(0, 240) });
       res.unsubscribes++;
+    } else if (SAMPLE_OFFER.test(subj) && !/did the samples/i.test(subj) && SAMPLE_YES.test(words)) {
+      // They asked for samples. Confirm right away in the same thread (Darrin 10/22/26: "an email
+      // that goes back to the chiropractors that request the free sample confirming we'll get one on
+      // the road"). Once per person; Darrin still forwards the thread to orders to get it packed.
+      const { data: had } = await sb.from("growth_events").select("id").eq("email", from).eq("kind", "sample_confirm").limit(1);
+      if (!had?.length) {
+        try {
+          const text = sampleConfirm();
+          await sendMail(token, { to: from, subject: /^re:/i.test(subj) ? subj : `Re: ${subj}`, text, html: toHtml(text), threadId: m.threadId, inReplyTo: m.h["message-id"] || null });
+          await event(sb, from, "sample_confirm", id, { subject: subj });
+          res.sampleConfirms++;
+        } catch (e: any) {
+          await event(sb, from, "sample_confirm_failed", id, { error: String(e?.message || e).slice(0, 200) });
+        }
+      }
     }
   }
 

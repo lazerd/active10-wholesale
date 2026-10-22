@@ -123,12 +123,12 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
   const lanes: Record<Lane, Pre[]> = { sample_followup: [], restock: [], winback_bump: [], cold_bump: [], winback: [], chiro: [], club: [], case_deal: [] };
   const base = { reply_to_queue_id: null, prospect_id: null, qb_customer_id: null, meta: {} };
 
-  // ── sample follow-up: a sample went out 12–60 days ago, no order since ──
+  // ── sample follow-up: a sample went out 8–60 days ago, no order since ──
   for (const r of samples) {
     const e = lower(r.email), when = r.shipped_at || r.created_at;
     if (!e || !when || r.ordered_at) continue;
     const a = age(when);
-    if (a < 12 || a > 60) continue;
+    if (a < 8 || a > 60) continue; // 8: ground shipping lands in ~5 days; ask while it is still on the desk
     const key = `sample:${e}`;
     const c = byEmail.get(e);
     if (usedKeys.has(key) || (c?.lastDate && c.lastDate >= String(when).slice(0, 10))) continue;
