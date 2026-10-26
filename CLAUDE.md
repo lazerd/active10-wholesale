@@ -34,3 +34,11 @@ already tier-discounted, `subtotal` is the pre-discount wholesale total, and
 `total` is the sum of `line_total`. QuickBooks invoices are created later via
 `/api/qb/create-invoice`, which maps `products.qb_sku` to a QB ItemRef — so editing
 an order must happen **before** `qb_invoice_id` is set.
+
+## Small-business skills
+
+`.claude/skills/` holds 18 slash-command playbooks (money, sales & CRM, customers, marketing,
+briefings) mapped onto Active 10's stack: QuickBooks, Supabase, Gmail, Calendar, Drive.
+They all read `.claude/active10-context.md` first. Database reads go through
+`node scripts/readonly-sql.mjs`, which runs inside a READ ONLY transaction. Writes, sends and
+refunds wait for Darrin's approval.
