@@ -5,7 +5,9 @@ import { GMAIL_REDIRECT, SITE } from "@/lib/gmail";
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
 export async function GET(req: NextRequest) {
-  const code = new URL(req.url).searchParams.get("code");
+  const params = new URL(req.url).searchParams;
+  const code = params.get("code");
+  const personal = (params.get("state") || "").startsWith("personal.");
   if (!code) return NextResponse.redirect(`${SITE}?gmail_error=missing_code`);
   try {
     const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
@@ -33,16 +35,20 @@ export async function GET(req: NextRequest) {
     } catch {}
 
     const row: any = {
-      id: "default",
+      id: personal ? "personal" : "default",
       access_token: t.access_token,
       expires_at: new Date(Date.now() + t.expires_in * 1000).toISOString(),
       email,
       updated_at: new Date().toISOString(),
     };
     if (t.refresh_token) row.refresh_token = t.refresh_token; // only present on first consent
+    // The personal row must be darrinjco@ — never let a wrong-account sign-in land there.
+    if (personal && email.toLowerCase() !== "darrinjco@gmail.com") {
+      return NextResponse.redirect(`${SITE}?gmail_error=wrong_account`);
+    }
     await supabase.from("gmail_tokens").upsert(row);
 
-    return NextResponse.redirect(`${SITE}?gmail_connected=true`);
+    return NextResponse.redirect(`${SITE}?gmail_connected=${personal ? "personal" : "true"}`);
   } catch (err) {
     console.error("Gmail callback error:", err);
     return NextResponse.redirect(`${SITE}?gmail_error=unknown`);
