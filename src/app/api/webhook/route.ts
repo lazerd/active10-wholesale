@@ -35,11 +35,11 @@ function estimateShippingWeight(items: any[]): string {
   return lbsWhole > 0 ? `${lbsWhole} lb ${ozRemainder} oz` : `${totalOz.toFixed(1)} oz`;
 }
 
-async function sendEmail(to: string, subject: string, html: string, from = "Active 10 Wholesale <notifications@getactive10.com>") {
+async function sendEmail(to: string, subject: string, html: string, from = "Active 10 Wholesale <notifications@getactive10.com>", replyTo?: string) {
   return fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${RESEND_API_KEY}` },
-    body: JSON.stringify({ from, to, subject, html }),
+    body: JSON.stringify({ from, to, subject, html, ...(replyTo ? { reply_to: replyTo } : {}) }),
   });
 }
 
@@ -168,7 +168,14 @@ export async function POST(req: NextRequest) {
               </div>
               <div style="padding:32px;">
                 <p style="color:#1a1a2e;font-size:15px;margin:0 0 8px;">Hi <strong>${record.customer_name}</strong>,</p>
-                <p style="color:#444;font-size:14px;line-height:1.7;margin:0 0 24px;">Thank you for your order! We've received it and will review it shortly. You'll receive a follow-up email with your official invoice and a secure payment link.</p>
+                <p style="color:#444;font-size:14px;line-height:1.7;margin:0 0 12px;">Thank you for your order! We've received it, and it will ship within <strong>48 business hours</strong> to:</p>
+                <div style="background:#f0f7ff;border:1px solid #cce0f5;border-radius:8px;padding:14px 18px;margin:0 0 12px;font-size:15px;line-height:1.6;color:#1a1a2e;">
+                  <strong>${record.customer_name}</strong><br/>
+                  ${record.customer_address ? `<strong>${record.customer_address}</strong><br/>` : ""}
+                  ${cityLine ? `<strong>${cityLine}</strong>` : ""}
+                  ${!record.customer_address && !cityLine ? `<strong>the shipping address on your account</strong>` : ""}
+                </div>
+                <p style="color:#444;font-size:14px;line-height:1.7;margin:0 0 24px;">If this isn't where your order should ship, please reply to this email or contact us at <a href="mailto:activeformulations@gmail.com" style="color:#0072BC;">activeformulations@gmail.com</a> as soon as possible, so we can update your shipping address before the package leaves our facility.</p>
                 <div style="background:#f0f7ff;border:1px solid #cce0f5;border-radius:8px;padding:14px 18px;margin-bottom:24px;">
                   <span style="color:#666;font-size:13px;">Order Reference: </span>
                   <span style="color:#0072BC;font-weight:700;font-size:14px;">${record.order_number || "Pending"}</span>
@@ -183,7 +190,7 @@ export async function POST(req: NextRequest) {
                 </table>
                 <div style="margin-top:28px;background:#fffbf0;border-left:4px solid #F4B942;border-radius:0 8px 8px 0;padding:16px 18px;">
                   <p style="margin:0;font-size:13px;color:#7a6000;font-weight:600;">What happens next?</p>
-                  <p style="margin:6px 0 0;font-size:13px;color:#7a6000;line-height:1.6;">Our team will send you an invoice with a secure payment link within 1 business day.</p>
+                  <p style="margin:6px 0 0;font-size:13px;color:#7a6000;line-height:1.6;">You'll receive your invoice by email with a secure payment link.</p>
                 </div>
                 <p style="color:#888;font-size:12px;margin-top:28px;line-height:1.6;">Questions? <a href="mailto:activeformulations@gmail.com" style="color:#0072BC;">activeformulations@gmail.com</a></p>
               </div>
@@ -193,7 +200,7 @@ export async function POST(req: NextRequest) {
             </div>
           </div>
         `;
-        await sendEmail(record.customer_email, "We received your order — invoice coming soon!", confirmHtml, "Active 10 Wholesale <noreply@getactive10.com>");
+        await sendEmail(record.customer_email, "Thank you for your order! It ships within 48 business hours", confirmHtml, "Active 10 Wholesale <noreply@getactive10.com>", "activeformulations@gmail.com");
       }
 
       return NextResponse.json({ ok: true, type: "order", results });
