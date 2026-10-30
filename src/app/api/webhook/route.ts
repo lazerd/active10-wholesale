@@ -200,7 +200,7 @@ export async function POST(req: NextRequest) {
             </div>
           </div>
         `;
-        await sendEmail(record.customer_email, "Thank you for your order! It ships within 48 business hours", confirmHtml, "Active 10 Wholesale <noreply@getactive10.com>", "activeformulations@gmail.com");
+        await sendEmail(record.customer_email, "Thank you for your order! It ships within 48 business hours", confirmHtml, "Active 10 Wholesale <notifications@getactive10.com>", "activeformulations@gmail.com");
       }
 
       return NextResponse.json({ ok: true, type: "order", results });
