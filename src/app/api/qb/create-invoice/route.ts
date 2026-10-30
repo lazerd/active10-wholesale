@@ -268,6 +268,12 @@ export async function POST(req: NextRequest) {
       invoiceData.DocNumber = nextDocNumber;
     }
 
+    // Without BillEmail QB can't email the invoice, so the invoice chaser skips it.
+    const billEmail = order.customer_email || customer?.email;
+    if (billEmail) {
+      invoiceData.BillEmail = { Address: billEmail };
+    }
+
     const result = await qbApi(
       tokens.realm_id,
       tokens.access_token,
