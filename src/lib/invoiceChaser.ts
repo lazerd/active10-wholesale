@@ -39,6 +39,19 @@ async function openInvoices(realm: string, token: string) {
   }
 }
 
+/** QB's send endpoint throws a NullPointerException on a JSON Content-Type; it wants octet-stream and no body. */
+async function qbSend(realm: string, token: string, invoiceId: string) {
+  const base = process.env.QB_ENVIRONMENT === "sandbox" ? "https://sandbox-quickbooks.api.intuit.com" : "https://quickbooks.api.intuit.com";
+  const r = await fetch(`${base}/v3/company/${realm}/invoice/${invoiceId}/send?minorversion=75`, {
+    method: "POST", cache: "no-store",
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/json", "Content-Type": "application/octet-stream" },
+  });
+  if (!r.ok) throw new Error(`QB send ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  const j = await r.json();
+  if (j?.Invoice?.EmailStatus !== "EmailSent") throw new Error(`QB send returned EmailStatus ${j?.Invoice?.EmailStatus}`);
+  return j;
+}
+
 export async function planChase(sb: SupabaseClient, now = new Date()) {
   const s = await loadChaserSettings(sb);
   const tok = await getQBTokens();
@@ -85,7 +98,7 @@ export async function runChase(sb: SupabaseClient, opts: { live: boolean; only?:
   if (opts.live) {
     for (const it of due) {
       try {
-        await qbApi(token.realm_id, token.access_token, `invoice/${it.id}/send?minorversion=75`, "POST");
+        await qbSend(token.realm_id, token.access_token, it.id);
         await sb.from("invoice_chaser_log").insert({
           invoice_id: it.id, doc_number: it.doc, customer: it.customer, email: it.email, balance: it.balance, kind: it.action,
         });
