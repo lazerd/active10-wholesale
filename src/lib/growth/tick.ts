@@ -8,6 +8,7 @@ import { sendDigest } from "./digest";
 import { discover } from "./discover";
 import { proposeChallengers } from "./abtest";
 import { sendViaResend, checkResendBounces } from "./resendx";
+import { chaseIfDue } from "@/lib/invoiceChaser";
 
 /** Gemini with a model chain: each free-tier model has its own small daily quota. */
 async function gemini(prompt: string) {
@@ -46,6 +47,8 @@ export async function tick() {
     if (s.last_error?.startsWith("Gmail")) await sb.from("growth_settings").update({ last_error: null }).eq("id", "default");
     try { out.inbox = await scanInbox(sb, token, s); } catch (e: any) { out.inbox = { error: e.message }; }
   }
+
+  try { out.invoices = await chaseIfDue(sb, pt); } catch (e: any) { out.invoices = { error: e.message }; }
 
   const weekday = pt.weekday !== "Sat" && pt.weekday !== "Sun";
   const target = pt.minutes >= 16 * 60 || !weekday ? nextWeekday(pt.date) : pt.date;
