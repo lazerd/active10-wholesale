@@ -38,8 +38,8 @@ export function secondOffer(kind: "chiro" | "club" | "customer", greeting: strin
       ? "I'm Darrin, I make Active 10, a pain relief cream. A lot of chiropractors keep it at the front desk for patients."
       : "It's Darrin from Active 10.";
   const deal = kind === "customer"
-    ? "We ended up with extra stock of our original 4oz tubes, so I'm offering a case of 24 at $8 a tube to the accounts that have carried us. That's $192 plus shipping, about half our normal wholesale. They retail for $24.95, so you'd make about $400 on the case."
-    : "We ended up with extra stock of our original 4oz tubes, so for new accounts I'm doing one case of 24 at $8 a tube. That's $192 plus shipping. They retail for $24.95, so you'd make about $400 on the case.";
+    ? "We ended up with extra stock of our original 4oz tubes, so I'm offering a case of 24 at $8 a tube to the accounts that have carried us. That's $192 plus shipping, about half our normal wholesale. They retail for $24.95, so you'd make about $400 on the case. One thing to know: these are dated February 2027, so it's a fit if you'll get through a case by then."
+    : "We ended up with extra stock of our original 4oz tubes, so for new accounts I'm doing one case of 24 at $8 a tube. That's $192 plus shipping. They retail for $24.95, so you'd make about $400 on the case. One thing to know: these are dated February 2027, so it's a fit if you'll get through a case by then.";
   return {
     subject: "a case of Active 10 for $8 a tube",
     text: `${greeting}\n\n${who}\n\n${deal}\n\nTo order, just reply "send a case" and I'll invoice you. Or set up a wholesale account at wholesale.getactive10.com.\n\nIt's only while this batch lasts.\n\n${SIGN}`,

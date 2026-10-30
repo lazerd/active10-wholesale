@@ -21,7 +21,7 @@ const SIGN = "Darrin Cohen\nFounder, Active 10\n800-636-4130";
 function body(greeting: string) {
   return `${greeting}
 
-It's been a while since your last Active 10 order, so I wanted to make sure you saw this. We ended up with extra stock of our original 4oz tubes, so I'm doing a case of 24 for $8 a tube. That's $192 for the case plus shipping, about half our normal wholesale price, and they retail for $29.95.
+It's been a while since your last Active 10 order, so I wanted to make sure you saw this. We ended up with extra stock of our original 4oz tubes, so I'm doing a case of 24 for $8 a tube. That's $192 for the case plus shipping, about half our normal wholesale price, and they retail for $29.95. One thing to know: these are dated February 2027, so it's a fit if you'll get through a case by then.
 
 It's on the portal now as the "Original Tube Case Deal": wholesale.getactive10.com
 Or just reply "send a case" and I'll invoice you.
