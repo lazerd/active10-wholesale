@@ -54,6 +54,7 @@ function pickEmail(html: string, host: string): string | null {
   const found = (html.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) || []).map((x) => x.toLowerCase());
   const ok = found.filter((e) =>
     !/\.(png|jpe?g|gif|svg|webp|css|js)$/.test(e) && !/(sentry|wixpress|example|domain|yourname|placeholder|godaddy|squarespace|wordpress)\./.test(e) &&
+    !/@(mysite|yoursite|email|website|test)\./.test(e) &&
     !BAD_LOCAL.some((b) => e.startsWith(b + "@")));
   // Prefer the practice's own domain over a stray address in a footer.
   return ok.find((e) => e.endsWith("@" + host)) || ok[0] || null;
