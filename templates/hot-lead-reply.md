@@ -94,7 +94,7 @@ Hi <first name>,
 Sure — quick rundown.
 
 We make a topical pain cream, two versions. Original is the standard
-one. PLUS is stronger and has turmeric in it. Neither has any THC.
+one. PLUS is stronger and has turmeric in it.
 Comes as a 3oz roll-on, a 4oz tube, or an 8oz pump.
 
 Most places end up with sealed roll-ons on the counter for people to
@@ -155,6 +155,7 @@ Darrin's deliberate choices in this version (keep them):
 - The three clinic-use points are a funnel: pump on the table → sample packet in hand → retail
   shelf — and the intro kit at the bottom contains exactly those three things.
 - "CBD-infused" is fine here (email, not the website); the line is still branded PLUS.
+- Never say "THC-free" or "no THC" (2026-11-01): the PLUS roll-on COA reports 0.07 mg/g total THC.
 
 First used 2026-08-19: Dr. Michael Zalben, Zalben Zone Chiropractic, sent as John Watson
 (john@tryapexops.co).
@@ -179,8 +180,7 @@ How clinics typically use it:
 
 3. At the front desk — clinics keep it on the shelf and sell at
    retail as a simple maintenance option, so it pays for itself as a
-   small retail line. PLUS is the CBD-infused formula with turmeric,
-   and it's THC-free.
+   small retail line. PLUS is the CBD-infused formula with turmeric.
 
 Everything is in stock and ready to ship. Online wholesale accounts
 are really easy to setup at:
