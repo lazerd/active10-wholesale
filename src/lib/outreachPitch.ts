@@ -14,7 +14,7 @@ export function founderLetter(p: Prospect): Pitch {
   if ((p.type || "") === "club") {
     return {
       subject: "fellow dca member + your pro shop",
-      body: `Hi ${first},\n\nI'm Darrin Cohen, a fellow member of the Directors Club of America. My cofounder June Munroe and I make Active 10, a topical recovery cream players reach for after a tough match. Made in the USA, THC-free.\n\nJarrett Chirico keeps it in his pro shop at North Hills (and carried it at his last club too), and both times it's been one of his best sellers at the counter. Players try it, feel the difference, and come back for more.\n\nI'd rather you judge it than take my word for it, so let me just send you a free sample — try it after your own match and put a few on the counter. No cost, no sales call.\n\nIf it earns a spot, the first order's easy: our DCA intro kit is 3 PLUS tubes + 3 PLUS roll-ons + 10 sample packets for $99 shipped — about $120 at normal wholesale, and $240 of retail on your counter.\n\nJust reply with where to ship it — or grab one here: wholesale.getactive10.com/sample. Either way I'll get it out this week. Thanks, ${first}.\n\nDarrin & June\nActive 10\n800-636-4130`,
+      body: `Hi ${first},\n\nI'm Darrin Cohen, a fellow member of the Directors Club of America. My cofounder June Munroe and I make Active 10, a topical recovery cream players reach for after a tough match. Made in the USA.\n\nJarrett Chirico keeps it in his pro shop at North Hills (and carried it at his last club too), and both times it's been one of his best sellers at the counter. Players try it, feel the difference, and come back for more.\n\nI'd rather you judge it than take my word for it, so let me just send you a free sample — try it after your own match and put a few on the counter. No cost, no sales call.\n\nIf it earns a spot, the first order's easy: our DCA intro kit is 3 PLUS tubes + 3 PLUS roll-ons + 10 sample packets for $99 shipped — about $120 at normal wholesale, and $240 of retail on your counter.\n\nJust reply with where to ship it — or grab one here: wholesale.getactive10.com/sample. Either way I'll get it out this week. Thanks, ${first}.\n\nDarrin & June\nActive 10\n800-636-4130`,
     };
   }
   return {
@@ -71,7 +71,7 @@ export function clubTemplatePitch(p: Prospect, angle: string): Pitch {
     proshop_intro: founderLetter(p),
     margin: {
       subject: `a counter product for the ${b} pro shop`,
-      body: `Hi ${first},\n\nCircling back, one DCA director to another. Active 10 is a topical recovery cream (made in the USA, THC-free) that players buy right at the pro-shop counter after a match. Wholesale runs about 50% off retail, so it's real margin on a small footprint.\n\nJarrett Chirico has it in his shop at North Hills and it's been one of his best sellers. Want me to send a free sample so you can see for yourself?\n\nDarrin & June\nActive 10\n${SITE}`,
+      body: `Hi ${first},\n\nCircling back, one DCA director to another. Active 10 is a topical recovery cream (made in the USA) that players buy right at the pro-shop counter after a match. Wholesale runs about 50% off retail, so it's real margin on a small footprint.\n\nJarrett Chirico has it in his shop at North Hills and it's been one of his best sellers. Want me to send a free sample so you can see for yourself?\n\nDarrin & June\nActive 10\n${SITE}`,
     },
     player_demand: {
       subject: `what your players use after a match`,
@@ -183,7 +183,7 @@ BANNED (never use): "I hope this email finds you well", "I hope you're doing wel
 ${opts.instructions ? `\nExtra direction from Darrin (follow this): ${opts.instructions}\n` : ""}
 Return ONLY valid JSON: {"subject":"...","body":"..."} with \\n for line breaks in the body.`;
 
-  const clubPrompt = `You're Darrin Cohen, a member of the Directors Club of America (DCA). You and your cofounder June Munroe make Active 10, a topical recovery cream (made in the USA, THC-free) that racquet players use after a match. You sell it wholesale to private-club PRO SHOPS to stock at the counter. Write ONE cold outreach email to a fellow DCA member (a club's racquets director / GM) that actually gets a reply.
+  const clubPrompt = `You're Darrin Cohen, a member of the Directors Club of America (DCA). You and your cofounder June Munroe make Active 10, a topical recovery cream (made in the USA) that racquet players use after a match. You sell it wholesale to private-club PRO SHOPS to stock at the counter. Write ONE cold outreach email to a fellow DCA member (a club's racquets director / GM) that actually gets a reply.
 
 Recipient: ${p.name || "the racquets director"} at "${p.business || "a private club"}"${p.city ? ` in ${p.city}` : ""} — a fellow DCA member.
 Lead with the shared DCA membership as the natural reason you're reaching out — one director to another, not a cold stranger. Never say you run a tennis program anywhere.
