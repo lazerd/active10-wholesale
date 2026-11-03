@@ -1,3 +1,4 @@
+// @ts-nocheck  (one-off script; pg has no types installed, and this must not break the Vercel build)
 // Trash unsubscribe emails in activeformulations@ ONLY when the sender is already in growth_suppression.
 import { getGmailAccess } from "../src/lib/gmail";
 import pg from "pg"; import fs from "fs";
