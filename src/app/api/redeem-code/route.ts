@@ -17,6 +17,9 @@ const PROMO_CODES: Record<string, { discount: number; freeShipping: boolean; exp
   // Growth engine win-back offer (src/lib/growth/templates.ts) — 15% off one
   // comeback order, any size (Darrin, 9/10/26). Only mailed to lapsed accounts.
   WELCOMEBACK: { discount: 0.15, freeShipping: false, oncePerCustomer: true },
+  // Holiday sale, started early with the move off the old Orderspace portal
+  // (Darrin, 11/3/26): 20% off through Dec 31, midnight Pacific. Reusable.
+  HOLIDAY20: { discount: 0.2, freeShipping: false, expires: "2027-01-01T08:00:00Z", oncePerCustomer: false },
 };
 
 // A customer has used a code if any prior order carries the marker. We write
