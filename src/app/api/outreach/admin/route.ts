@@ -57,8 +57,11 @@ export async function POST(req: NextRequest) {
     const action = body.action;
 
     if (action === "list") {
-      const { data: prospects } = await supabaseAdmin.from("outreach_prospects").select("*").order("created_at", { ascending: false });
-      const { data: touches } = await supabaseAdmin.from("outreach_touches").select("*").order("created_at", { ascending: false });
+      const [{ data: prospects }, { data: touches }, { data: settings }] = await Promise.all([
+        supabaseAdmin.from("outreach_prospects").select("*").order("created_at", { ascending: false }),
+        supabaseAdmin.from("outreach_touches").select("id, prospect_id, angle, subject, body, connect_note, channel, status, sent_at").order("created_at", { ascending: false }),
+        supabaseAdmin.from("outreach_settings").select("standing_instructions").eq("id", "default").single(),
+      ]);
       const ps = prospects || [], ts = touches || [];
       const byProspect: Record<string, any[]> = {};
       for (const t of ts) (byProspect[t.prospect_id] = byProspect[t.prospect_id] || []).push(t);
@@ -85,7 +88,6 @@ export async function POST(req: NextRequest) {
         won: ps.filter((p) => p.status === "won").length,
         dead: ps.filter((p) => p.status === "dead").length,
       };
-      const { data: settings } = await supabaseAdmin.from("outreach_settings").select("standing_instructions").eq("id", "default").single();
       return NextResponse.json({ ok: true, prospects: rows, funnel, angles, aiOn: !!process.env.GEMINI_API_KEY, searchOn: !!process.env.BRAVE_API_KEY, standingInstructions: settings?.standing_instructions || "" });
     }
 

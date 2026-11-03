@@ -245,7 +245,12 @@ export default function App() {
     // becomes a no-op instead of overwriting fresh state with stale results.
     const seq = ++loadSeq.current;
     loadedUserId.current = s.user.id;
-    setLoading(true);
+    // Remembered admin role: paint the dashboard right away and fetch its
+    // tables in the background while the role is re-verified below.
+    const roleKey = "a10_role_" + s.user.id;
+    let cachedAdmin = false;
+    try { cachedAdmin = localStorage.getItem(roleKey) === "admin"; } catch {}
+    if (cachedAdmin) { setIsAdmin(true); setLoading(false); loadAdminData(); } else setLoading(true);
     const email = s.user.email;
     // The admin lookup is case-insensitive: an address capitalized differently
     // in admin_emails than in the JWT used to silently drop the user on the
@@ -271,13 +276,16 @@ export default function App() {
       const ad = (adRes.data || []).some((r: { email: string | null }) => (r.email || "").toLowerCase() === target);
       const cd = cdRes.error ? null : cdRes.data;
       setIsAdmin(!!ad);
+      try { if (ad) localStorage.setItem(roleKey, "admin"); else localStorage.removeItem(roleKey); } catch {}
+      if (cachedAdmin && !ad) { setCustomers([]); setApplications([]); setOrders([]); }
       setCustomer(cd ? (cd as Customer) : null);
       if (!ad && !cd) {
         const { data: af } = await supabase.from("affiliates").select("id").limit(1);
         if (seq !== loadSeq.current) return;
         setIsAffiliate(!!(af && af.length));
       } else setIsAffiliate(false);
-      if (ad) await loadAdminData();
+      // Don't hold the screen on the admin tables; they fill in as they arrive.
+      if (ad && !cachedAdmin) loadAdminData();
     } catch {
       if (seq === loadSeq.current) loadedUserId.current = null;
     } finally {

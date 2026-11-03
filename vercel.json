@@ -1,5 +1,11 @@
 {
+  "regions": [
+    "iad1"
+  ],
   "crons": [
-    { "path": "/api/growth/tick", "schedule": "30 15 * * *" }
+    {
+      "path": "/api/growth/tick",
+      "schedule": "30 15 * * *"
+    }
   ]
 }
