@@ -45,7 +45,10 @@ export async function scanInbox(sb: SupabaseClient, token: string, s: Settings) 
   const res = { checked: 0, replies: 0, bounces: 0, unsubscribes: 0, samples: 0, sampleConfirms: 0, cancelled: 0 };
 
   // Includes Trash: Darrin deletes bounce notices by hand, often before this scan runs.
-  const ids = await listIds(token, `after:${since} -in:sent -in:chats -in:drafts`, 60, true);
+  // 500, oldest first: a blast can draw dozens of "unsubscribe" replies between ticks, and the
+  // old cap of 60 (newest first) silently dropped the older ones. Already-seen ids are skipped
+  // below, so a normal tick still only fetches what's new.
+  const ids = (await listIds(token, `after:${since} -in:sent -in:chats -in:drafts`, 500, true)).reverse();
   const { data: done } = ids.length ? await sb.from("growth_events").select("gmail_id").in("gmail_id", ids) : { data: [] as any[] };
   const seen = new Set((done || []).map((d: any) => d.gmail_id));
 
