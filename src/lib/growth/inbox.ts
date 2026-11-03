@@ -34,6 +34,10 @@ async function event(sb: SupabaseClient, email: string, kind: string, gmailId: s
 async function suppress(sb: SupabaseClient, email: string, reason: string) {
   await sb.from("growth_suppression").upsert({ email: email.toLowerCase(), reason }, { onConflict: "email", ignoreDuplicates: true });
 }
+/** Move an unsubscribe email to Trash (needs gmail.modify; a 403 on an older token is ignored). Only call after suppress(). */
+async function trashMsg(token: string, id: string) {
+  await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}/trash`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
+}
 async function cancelPlanned(sb: SupabaseClient, email: string, reason: string): Promise<number> {
   const { data } = await sb.from("growth_queue").update({ status: "cancelled", skip_reason: reason }).ilike("email", email).eq("status", "planned").select("id");
   return data?.length || 0;
@@ -91,6 +95,7 @@ export async function scanInbox(sb: SupabaseClient, token: string, s: Settings) 
       await suppress(sb, from, "unsubscribe button");
       await event(sb, from, "unsubscribe", id, { subject: subj, via: "list-unsubscribe" });
       res.unsubscribes++;
+      await trashMsg(token, id);
       res.cancelled += await cancelPlanned(sb, from, "unsubscribed");
       continue;
     }
@@ -109,6 +114,7 @@ export async function scanInbox(sb: SupabaseClient, token: string, s: Settings) 
       await suppress(sb, from, "asked to stop");
       await event(sb, from, "unsubscribe", id, { snippet: words.slice(0, 240) });
       res.unsubscribes++;
+      await trashMsg(token, id);
     } else if (SAMPLE_OFFER.test(subj) && !/did the samples/i.test(subj) && SAMPLE_YES.test(words)) {
       // They asked for samples. Confirm right away in the same thread (Darrin 10/22/26: "an email
       // that goes back to the chiropractors that request the free sample confirming we'll get one on

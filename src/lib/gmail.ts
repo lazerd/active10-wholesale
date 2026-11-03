@@ -13,6 +13,9 @@ export const GMAIL_SCOPES = [
   "https://www.googleapis.com/auth/gmail.send",
   "https://www.googleapis.com/auth/gmail.compose",
   "https://www.googleapis.com/auth/gmail.readonly",
+  // gmail.modify lets the growth scan move an "unsubscribe" email to Trash once the sender
+  // is on growth_suppression (Darrin 11/3/26). Needs a one-time reconnect, like compose did.
+  "https://www.googleapis.com/auth/gmail.modify",
 ];
 
 // Returns a valid access token, refreshing if needed. null if not connected.
