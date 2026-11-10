@@ -56,8 +56,33 @@ function pickEmail(html: string, host: string): string | null {
     !/\.(png|jpe?g|gif|svg|webp|css|js)$/.test(e) && !/(sentry|wixpress|example|domain|yourname|placeholder|godaddy|squarespace|wordpress)\./.test(e) &&
     !/@(mysite|yoursite|email|website|test)\./.test(e) &&
     !BAD_LOCAL.some((b) => e.startsWith(b + "@")));
-  // Prefer the practice's own domain over a stray address in a footer.
-  return ok.find((e) => e.endsWith("@" + host)) || ok[0] || null;
+  // Only the practice's own domain (or a free-mail box it lists). A stray footer address
+  // (web designer, site builder) and scraper decoys bounced 11/3-11/9 (11 of 164), and
+  // Resend is shared with ClubMode, so drop anything else.
+  const dom = (e: string) => e.split("@")[1] || "";
+  const own = (e: string) => dom(e) === host || host.endsWith("." + dom(e)) || dom(e).endsWith("." + host);
+  // e.g. columbia@thewellnessway.com on thewellnesswaycolumbia.com, toledochiropractic@ameritech.net on toledochiropractic.net
+  const kin = (e: string) => { const l = e.split("@")[0], d1 = dom(e).split(".")[0]; return (d1.length >= 6 && host.includes(d1)) || (l.length >= 6 && host.includes(l)); };
+  const good = ok.filter((e) => !JUNK_EMAIL.test(e) && (own(e) || kin(e) || FREE_MAIL.has(dom(e))));
+  return good.find(own) || good[0] || null;
+}
+
+// Placeholders, URL-encoded junk ("%20name@...") and obfuscation decoys.
+const JUNK_EMAIL = /%|^[._+-]|^(john|jane)(\.?doe)?@|@doe\.com$|^(name|user|your|you|someone|firstname|first\.last|email)@|^(?=[a-z0-9]{12,}@)(?:[a-z]*\d+(?!\d)){3}/;
+
+const mxCache = new Map<string, boolean>();
+async function hasMx(email: string): Promise<boolean> {
+  const d = email.split("@")[1] || "";
+  if (FREE_MAIL.has(d)) return true;
+  if (mxCache.has(d)) return mxCache.get(d)!;
+  let ok = false;
+  try {
+    const { resolveMx } = await import("node:dns/promises");
+    const mx = await Promise.race([resolveMx(d), new Promise<never>((_, rej) => setTimeout(() => rej(new Error("mx timeout")), 4000))]);
+    ok = Array.isArray(mx) && mx.length > 0;
+  } catch { ok = false; }
+  mxCache.set(d, ok);
+  return ok;
 }
 
 const textOf = (html: string) => html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&[a-z#0-9]+;/gi, " ").replace(/\s+/g, " ").trim();
@@ -121,7 +146,7 @@ export async function discover(sb: SupabaseClient, s: Settings, deadline: number
     if (!home) continue;
     let email = pickEmail(home, host);
     if (!email) for (const p of ["/contact", "/contact-us"]) { if (Date.now() > deadline) break; email = pickEmail(await page(`https://${host}${p}`, 5000), host); if (email) break; }
-    if (!email || haveEmail.has(email)) continue;
+    if (!email || haveEmail.has(email) || !(await hasMx(email))) continue;
     const title = (home.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] || r.title).trim();
     const c = await clean(title, textOf(home));
     if (!c.ok || !c.business) continue;
