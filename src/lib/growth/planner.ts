@@ -77,9 +77,17 @@ export async function planDay(opts: { date?: string; dryRun?: boolean } = {}): P
   const overflow = [...OVERFLOW_ORDER].sort((a, b) => multiplier(stats[b]) - multiplier(stats[a]));
 
   // ── cold letters: warmup budget (5 → 25/day) split between chiro and club, A/B variants ──
-  const coldCap = coldBudget(s, date);
+  let coldCap = coldBudget(s, date);
+  // Bounce guard: new cold letters stop while the 7-day bounce rate is over 4%
+  // (at least 4 bounces, so one dead inbox can't trip it). Bumps and warm lanes still go.
+  {
+    const wk = events.filter((e) => Date.parse(e.at) >= ref - 7 * DAY_MS);
+    const b = wk.filter((e) => e.kind === "bounce").length, c = wk.filter((e) => e.kind === "contacted").length;
+    if (b >= 4 && b / Math.max(1, c) > 0.04) { coldCap = 0; notes.push(`bounce guard: ${b}/${c} bounced in 7 days, no new cold letters`); }
+  }
   caps.club = Math.min(caps.club, Math.max(1, Math.round(coldCap * 0.2)));
   caps.chiro = coldCap - caps.club;
+  if (coldCap === 0) caps.club = caps.chiro = 0;
   if (!dry) { try { notes.push(...(await retireLosers(sb))); } catch (e: any) { notes.push("retire: " + e.message); } }
   const pickVariant = makePicker(await variantStats(sb));
   const autoLanes = new Set<string>(s.auto_lanes || ["chiro", "club", "cold_bump"]);
