@@ -121,7 +121,7 @@ export async function discover(sb: SupabaseClient, s: Settings, deadline: number
   if (!process.env.BRAVE_API_KEY) return { skipped: "no BRAVE_API_KEY" };
   const { count } = await sb.from("outreach_prospects").select("id", { count: "exact", head: true })
     .eq("type", "chiropractor").eq("status", "prospected").eq("source", "growth discovery");
-  if ((count || 0) >= 60) return { skipped: "buffer full", buffer: count };
+  if ((count || 0) >= 150) return { skipped: "buffer full", buffer: count }; // ~4 days at 35/day (was 60)
 
   const city = CITIES[s.city_cursor % CITIES.length];
   await sb.from("growth_settings").update({ city_cursor: s.city_cursor + 1 }).eq("id", "default");
