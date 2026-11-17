@@ -128,6 +128,12 @@ const QUERIES = [
   "chiropractor near downtown", "spine and posture chiropractor", "chiropractic and massage", "auto injury chiropractor", "pediatric chiropractor",
 ];
 
+/** Page titles arrive HTML-encoded ("Wellness &amp; Chiropractic"); 11/17 that reached 11 subject lines. */
+const unentity = (t: string) =>
+  t.replace(/&#(\d+);/g, (_m, n) => { const c = Number(n); return c === 8211 || c === 8212 ? "-" : String.fromCharCode(c); })
+   .replace(/&#x([0-9a-f]+);/gi, (_m, h) => String.fromCharCode(parseInt(h, 16)))
+   .replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&apos;|&rsquo;|&lsquo;/g, "'").replace(/&nbsp;/g, " ").replace(/&ndash;|&mdash;/g, "-");
+
 /** One search's worth: Brave → practice sites (6 at a time) → their own email → Gemini-cleaned name. */
 async function searchOnce(sb: SupabaseClient, cursor: number, deadline: number, haveEmail: Set<string>, haveHost: Set<string>) {
   const lap = Math.floor(cursor / CITIES.length);
@@ -156,7 +162,7 @@ async function searchOnce(sb: SupabaseClient, cursor: number, deadline: number, 
     const c = await clean(title, textOf(home));
     if (!c.ok || !c.business) return;
     const { error } = await sb.from("outreach_prospects").insert({
-      name: c.last ? `Dr. ${c.last}` : null, business: c.business, email, website: `https://${host}`, city,
+      name: c.last ? `Dr. ${c.last}` : null, business: unentity(c.business), email, website: `https://${host}`, city,
       type: "chiropractor", source: "growth discovery", status: "prospected", channel: "email", touch_count: 0,
     });
     if (!error) added++;
