@@ -34,8 +34,8 @@ const SKIP_HOSTS = [
 const BAD_LOCAL = ["no-reply", "noreply", "donotreply", "postmaster", "abuse", "privacy", "webmaster", "support", "billing", "careers", "jobs", "hr"];
 const hostOf = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, "").toLowerCase(); } catch { return ""; } };
 
-async function brave(q: string) {
-  const r = await fetch("https://api.search.brave.com/res/v1/web/search?count=20&q=" + encodeURIComponent(q), {
+async function brave(q: string, offset = 0) {
+  const r = await fetch(`https://api.search.brave.com/res/v1/web/search?count=20&offset=${offset}&q=` + encodeURIComponent(q), {
     headers: { Accept: "application/json", "X-Subscription-Token": process.env.BRAVE_API_KEY || "" }, cache: "no-store",
   });
   if (!r.ok) throw new Error(`Brave ${r.status}`);
@@ -117,14 +117,64 @@ async function clean(title: string, text: string): Promise<{ ok: boolean; busine
   return { ok: !!business, business, last: null };
 }
 
-export async function discover(sb: SupabaseClient, s: Settings, deadline: number) {
+/**
+ * Each pass through CITIES uses a different search (and, after those run out,
+ * deeper result pages). Repeating "chiropractor <city>" on a second lap only
+ * returned practices we already had, which is why discovery went quiet in
+ * November with the cursor past one full lap.
+ */
+const QUERIES = [
+  "chiropractor", "chiropractic clinic", "sports chiropractor", "family chiropractic", "chiropractic wellness center",
+  "chiropractor near downtown", "spine and posture chiropractor", "chiropractic and massage", "auto injury chiropractor", "pediatric chiropractor",
+];
+
+/** One search's worth: Brave → practice sites (6 at a time) → their own email → Gemini-cleaned name. */
+async function searchOnce(sb: SupabaseClient, cursor: number, deadline: number, haveEmail: Set<string>, haveHost: Set<string>) {
+  const lap = Math.floor(cursor / CITIES.length);
+  const city = CITIES[cursor % CITIES.length];
+  const q = `${QUERIES[lap % QUERIES.length]} ${city}`;
+  const offset = Math.floor(lap / QUERIES.length) % 10; // Brave allows pages 0–9
+  const results = await brave(q, offset);
+  let added = 0, looked = 0;
+  const todo = results.filter((r: { url: string }) => {
+    const host = hostOf(r.url);
+    if (!host || haveHost.has(host) || SKIP_HOSTS.some((x) => host.includes(x))) return false;
+    haveHost.add(host);
+    return true;
+  });
+  const one = async (r: { title: string; url: string }) => {
+    if (Date.now() > deadline) return;
+    const host = hostOf(r.url);
+    looked++;
+    const home = await page(`https://${host}`, 6000);
+    if (!home) return;
+    let email = pickEmail(home, host);
+    if (!email) for (const p of ["/contact", "/contact-us"]) { if (Date.now() > deadline) break; email = pickEmail(await page(`https://${host}${p}`, 5000), host); if (email) break; }
+    if (!email || haveEmail.has(email) || !(await hasMx(email))) return;
+    haveEmail.add(email);
+    const title = (home.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] || r.title).trim();
+    const c = await clean(title, textOf(home));
+    if (!c.ok || !c.business) return;
+    const { error } = await sb.from("outreach_prospects").insert({
+      name: c.last ? `Dr. ${c.last}` : null, business: c.business, email, website: `https://${host}`, city,
+      type: "chiropractor", source: "growth discovery", status: "prospected", channel: "email", touch_count: 0,
+    });
+    if (!error) added++;
+  };
+  for (let i = 0; i < todo.length; i += 6) {
+    if (Date.now() > deadline) break;
+    await Promise.all(todo.slice(i, i + 6).map(one));
+  }
+  return { q: offset ? `${q} (p${offset + 1})` : q, looked, added };
+}
+
+/** Keeps the chiro buffer stocked: as many searches as fit before `deadline`. */
+export async function discover(sb: SupabaseClient, s: Settings, deadline: number, opts: { buffer?: number } = {}) {
   if (!process.env.BRAVE_API_KEY) return { skipped: "no BRAVE_API_KEY" };
+  const want = opts.buffer ?? 300; // 100/day cold (11/17) → keep ~3 days ready
   const { count } = await sb.from("outreach_prospects").select("id", { count: "exact", head: true })
     .eq("type", "chiropractor").eq("status", "prospected").eq("source", "growth discovery");
-  if ((count || 0) >= 150) return { skipped: "buffer full", buffer: count }; // ~4 days at 35/day (was 60)
-
-  const city = CITIES[s.city_cursor % CITIES.length];
-  await sb.from("growth_settings").update({ city_cursor: s.city_cursor + 1 }).eq("id", "default");
+  if ((count || 0) >= want) return { skipped: "buffer full", buffer: count };
 
   const [prospects, customers] = await Promise.all([
     fetchAll<any>(() => sb.from("outreach_prospects").select("email, website")),
@@ -134,28 +184,15 @@ export async function discover(sb: SupabaseClient, s: Settings, deadline: number
   for (const p of prospects) { if (p.email) haveEmail.add(p.email.toLowerCase()); const h = hostOf(p.website || ""); if (h) haveHost.add(h); }
   for (const c of customers) { const e = (c.email || "").toLowerCase(); if (!e) continue; haveEmail.add(e); const d = e.split("@")[1]; if (d && !FREE_MAIL.has(d)) haveHost.add(d); }
 
-  const results = await brave(`chiropractor ${city}`);
-  let added = 0, looked = 0;
-  for (const r of results) {
-    if (Date.now() > deadline) break;
-    const host = hostOf(r.url);
-    if (!host || haveHost.has(host) || SKIP_HOSTS.some((x) => host.includes(x))) continue;
-    haveHost.add(host);
-    looked++;
-    const home = await page(`https://${host}`, 6000);
-    if (!home) continue;
-    let email = pickEmail(home, host);
-    if (!email) for (const p of ["/contact", "/contact-us"]) { if (Date.now() > deadline) break; email = pickEmail(await page(`https://${host}${p}`, 5000), host); if (email) break; }
-    if (!email || haveEmail.has(email) || !(await hasMx(email))) continue;
-    const title = (home.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] || r.title).trim();
-    const c = await clean(title, textOf(home));
-    if (!c.ok || !c.business) continue;
-    haveEmail.add(email);
-    const { error } = await sb.from("outreach_prospects").insert({
-      name: c.last ? `Dr. ${c.last}` : null, business: c.business, email, website: `https://${host}`, city,
-      type: "chiropractor", source: "growth discovery", status: "prospected", channel: "email", touch_count: 0,
-    });
-    if (!error) added++;
+  let cursor = s.city_cursor, added = 0;
+  const runs: any[] = [];
+  while (Date.now() < deadline - 8000 && (count || 0) + added < want) {
+    await sb.from("growth_settings").update({ city_cursor: cursor + 1 }).eq("id", "default");
+    const r = await searchOnce(sb, cursor, deadline, haveEmail, haveHost);
+    cursor++;
+    added += r.added;
+    runs.push(r);
   }
-  return { city, looked, added, buffer: (count || 0) + added };
+  s.city_cursor = cursor;
+  return { runs, added, buffer: (count || 0) + added };
 }

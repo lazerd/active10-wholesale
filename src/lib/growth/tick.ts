@@ -64,7 +64,7 @@ export async function tick() {
   const live = s.enabled && (!s.start_date || pt.date >= s.start_date) && s.paused_on !== pt.date && weekday;
   out.live = live;
   if (live && token && pt.minutes >= s.window_start - 5 && pt.minutes <= s.window_end + 90) {
-    out.sent = await sendDue(sb, token, 2, s.require_approval !== false, s);
+    out.sent = await sendDue(sb, token, 4, s.require_approval !== false, s); // 4/tick ≈ 168/day in the 7h window (100 cold/day since 11/17)
   }
 
   // Resend bounces and spam complaints never reach Gmail; ask Resend.
@@ -78,7 +78,7 @@ export async function tick() {
   }
 
   if (Date.now() - t0 < 20000) {
-    try { out.discover = await discover(sb, s, t0 + 45000); } catch (e: any) { out.discover = { error: e.message }; }
+    try { out.discover = await discover(sb, s, t0 + 100000); } catch (e: any) { out.discover = { error: e.message }; }
   }
   return out;
 }
