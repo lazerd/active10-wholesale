@@ -89,7 +89,16 @@ export async function sendDue(sb: SupabaseClient, token: string, max: number, re
   if (requireApproval) q = q.eq("approval", "approved"); // only what Darrin swiped right
   const { data: due } = await q.order("send_at").limit(max);
   const res: any[] = [];
+  const stopped = new Map<string, string | null>();
   for (const row of due || []) {
+    // Same-day bounce stop per lane (Resend is shared with ClubMode; 11/18 club_holiday hit 4/27).
+    if (!stopped.has(row.lane)) stopped.set(row.lane, await laneBounceStop(sb, row.lane, row.plan_date));
+    const why = stopped.get(row.lane);
+    if (why) {
+      await sb.from("growth_queue").update({ approval: "pending" }).eq("lane", row.lane).eq("plan_date", row.plan_date).eq("status", "planned").eq("approval", "approved");
+      res.push({ email: String(row.email).toLowerCase(), lane: row.lane, held: why });
+      continue;
+    }
     // Claim it first — a second overlapping tick then finds nothing to send.
     const { data: claimed } = await sb.from("growth_queue").update({ status: "sending" }).eq("id", row.id).eq("status", "planned").select("id");
     if (!claimed?.length) continue;
@@ -158,4 +167,20 @@ export async function sendDue(sb: SupabaseClient, token: string, max: number, re
     }
   }
   return res;
+}
+
+/**
+ * Today's bounce rate for one lane: if at least 2 of the lane's letters sent on this
+ * plan_date have bounced and that's over 4%, stop the lane for the day. The rest of its
+ * rows go back to approval 'pending' (nothing is deleted; re-approve to resume).
+ */
+async function laneBounceStop(sb: SupabaseClient, lane: string, planDate: string): Promise<string | null> {
+  const { data: sent } = await sb.from("growth_queue").select("email, sent_at").eq("lane", lane).eq("plan_date", planDate).eq("status", "sent");
+  if (!sent?.length) return null;
+  const emails = new Set(sent.map((r: any) => String(r.email).toLowerCase()));
+  const first = sent.map((r: any) => r.sent_at).filter(Boolean).sort()[0];
+  if (!first) return null;
+  const { data: ev } = await sb.from("growth_events").select("email").eq("kind", "bounce").gte("at", first);
+  const b = new Set((ev || []).map((e: any) => String(e.email).toLowerCase()).filter((e: string) => emails.has(e))).size;
+  return b >= 2 && b / sent.length > 0.04 ? `bounce stop: ${b}/${sent.length} ${lane} letters bounced on ${planDate}` : null;
 }
