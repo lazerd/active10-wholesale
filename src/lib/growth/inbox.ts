@@ -20,9 +20,9 @@ const UNSUB_NO = /^\s*no\b[,.!]?\s*(but\s*)?thanks?( you)?\b/i;
 // Dr. Grant "Stop", a country that bans the product) only got the 60-day pause. These stop for good.
 const DONE = /^\s*stop\b|\bno longer (sell|carry|stock|need|want|order|use|practic|offer)|\b(retired|retiring|closed (my|our|the) (practice|office|clinic|business)|out of business|passed away|bans? (all )?products?)\b/i;
 const BOUNCE_SUBJ = /delivery status notification|undeliverable|undelivered mail|mail delivery (failed|subsystem)|returned mail|delivery (has )?failed|failure notice|address not found/i;
-const SAMPLE_THREAD = /samples? for|free sample|fellow dca|pro shop|did the samples/i;
+const SAMPLE_THREAD = /samples? for|free sample|free tubes?|fellow dca|pro shop|did the samples/i;
 // A reply to one of our sample offers that says yes: a street address (ZIP) or a plain "send them".
-const SAMPLE_OFFER = /samples? for|free sample|pro shop/i;
+const SAMPLE_OFFER = /samples? for|free sample|free tubes?|pro shop/i;
 const SAMPLE_YES = /\b\d{5}(-\d{4})?\b|\b(yes|sure|please send|send (me |us |them |some|samples)|would (love|like)|mail (it|them))\b/i;
 
 /** Only the words they typed — drop the quoted original (which contains our own "no thanks" footer). */
